@@ -1,0 +1,44 @@
+# Anki Add-on: .gitignore
+
+# === API Keys & Secrets ===
+utils/ai_config.json
+
+# === Local Data & Cache ===
+utils/import_history.json
+utils/ai_cache/
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+*.egg-info/
+dist/
+build/
+*.egg
+
+# === Virtual Environment ===
+venv/
+.venv/
+env/
+.env
+
+# === IDE ===
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# === OS ===
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# === Logs ===
+*.log
+anki_tool.log*
+
+# === Anki ===
+*.anki2
+*.apkg
