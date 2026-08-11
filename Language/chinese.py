@@ -3,8 +3,9 @@
 LANG_CONFIG = {
     "label": "🇨🇳 Tiếng Trung",
     "lang_code": "zh",
-    "model_name": "AnkiTool Chinese V16.0 (Add-on)",
+    "model_name": "AnkiTool Chinese V17.0 (Add-on)",
     "old_model_names": [
+        "AnkiTool Chinese V16.0 (Add-on)",
         "AnkiTool Chinese V15.0 (Add-on)",
     ],
     "all_fields": [
@@ -47,13 +48,7 @@ LANG_CONFIG = {
         ("Example Audio", "Example"),
         ("Example2 Audio", "Example2"),
     ],
-    "template_names": (
-        "1. 中文 → Việt",
-        "2. Việt → 中文",
-        "3. Ghép chữ",
-        "4. Pinyin",
-        "5. 🔤 Ẩn Chữ Cái",
-    ),
+    "template_names": ("1. Tổng hợp (5 chế độ)",),
     # Dùng cho report "nghĩa khác" trong UI
     "furi_label": "Pinyin",
     "furi_json_key": "pinyin",
@@ -65,8 +60,10 @@ LANG_CONFIG = {
 GRAMMAR_CONFIG = {
     "label": "🇨🇳 Ngữ pháp Tiếng Trung",
     "lang_code": "zh",
-    "model_name": "AnkiTool Chinese Grammar V16.0 (Add-on)",
-    "old_model_names": [],
+    "model_name": "AnkiTool Chinese Grammar V17.0 (Add-on)",
+    "old_model_names": [
+        "AnkiTool Chinese Grammar V16.0 (Add-on)",
+    ],
     "all_fields": [
         "Pattern", "Pinyin", "Meaning", "HSK Level", "Topic",
         "Usage", "Explanation",

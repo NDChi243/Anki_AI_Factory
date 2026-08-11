@@ -15,7 +15,7 @@ import os
 
 from aqt.qt import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
-    QSlider, QSpinBox, QColorDialog, QGroupBox, QGridLayout,
+    QSlider, QSpinBox, QColorDialog, QGroupBox, QGridLayout, QSplitter,
     Qt, QColor,
 )
 from aqt.utils import tooltip
@@ -293,6 +293,60 @@ def apply_theme(widget, cfg=None):
     widget.setStyleSheet(build_stylesheet(cfg))
     save_config(cfg)
     return cfg
+
+
+# ── RatioSplitter: kéo phân cách mượt, giới hạn tỷ lệ cột ──
+class RatioSplitter(QSplitter):
+    """QSplitter giới hạn mỗi cột trong khoảng MIN_RATIO–MAX_RATIO (mặc định 3/10–7/10).
+
+    - Kéo mượt, không bị khóa cứng.
+    - Không cho thu gọn hết cột (min 30%).
+    - Không cho cột nào chiếm quá 70% (max 70%).
+    """
+
+    MIN_RATIO = 0.30
+    MAX_RATIO = 0.70
+
+    def __init__(self, parent=None):
+        super().__init__(Qt.Orientation.Horizontal, parent)
+        self._clamping = False
+        self.setChildrenCollapsible(False)
+        self.setOpaqueResize(True)
+        self.splitterMoved.connect(self._on_moved)
+
+    def _clamp(self):
+        """Siết tỷ lệ mỗi cột về [MIN_RATIO, MAX_RATIO] của tổng chiều rộng."""
+        if self._clamping:
+            return
+        self._clamping = True
+        try:
+            sizes = self.sizes()
+            total = sum(sizes)
+            n = len(sizes)
+            if n < 2 or total <= 0:
+                return
+            lo = int(total * self.MIN_RATIO)
+            hi = int(total * self.MAX_RATIO)
+            new_sizes = list(sizes)
+            changed = False
+            for i in range(n):
+                if new_sizes[i] < lo:
+                    new_sizes[i] = lo
+                    changed = True
+                elif new_sizes[i] > hi:
+                    new_sizes[i] = hi
+                    changed = True
+            if changed:
+                self.setSizes(new_sizes)
+        finally:
+            self._clamping = False
+
+    def _on_moved(self, pos, index):
+        self._clamp()
+
+    def resizeEvent(self, event):
+        super().resizeEvent(event)
+        self._clamp()
 
 
 # ── Window snap helpers (chia đôi màn hình với app khác / Anki) ──

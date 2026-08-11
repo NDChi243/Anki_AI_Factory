@@ -29,11 +29,19 @@ VOICE_OPTIONS = {
         {"id": "zh-HK-HiuGaaiNeural",   "name": "HiuGaai (Nữ, HK)",      "gender": "female"},
         {"id": "zh-HK-WanLungNeural",   "name": "WanLung (Nam, HK)",     "gender": "male"},
     ],
+    "ko": [
+        # Giọng Hàn Quốc (ko-KR) — 4 giọng
+        {"id": "ko-KR-SunHiNeural",   "name": "SunHi (Nữ)",     "gender": "female"},
+        {"id": "ko-KR-InJoonNeural",  "name": "InJoon (Nam)",   "gender": "male"},
+        {"id": "ko-KR-JiMinNeural",   "name": "JiMin (Nữ)",     "gender": "female"},
+        {"id": "ko-KR-HyunsuNeural",  "name": "Hyunsu (Nam)",   "gender": "male"},
+    ],
 }
 
 VOICE_SAMPLE = {
     "ja": "こんにちは、今日もよく頑張りましょう！",
     "zh": "你好，今天也要加油哦！",
+    "ko": "안녕하세요, 오늘도 힘내세요!",
 }
 
 # Voice đang được chọn cho mỗi ngôn ngữ (thread-safe)
@@ -79,13 +87,19 @@ def set_default_speed(lang: str, speed: float):
 
 # Map model name → language code để reviewer hook có thể phát hiện ngôn ngữ
 _MODEL_LANG_MAP = {
+    "AnkiTool Japanese V17.0 (Add-on)": "ja",
     "AnkiTool Japanese V16.0 (Add-on)": "ja",
     "AnkiTool Japanese V15.0 (Add-on)": "ja",
     "Mẫu Từ Vựng Tiếng Nhật V14.0 (Add-on)": "ja",
+    "AnkiTool Japanese Grammar V17.0 (Add-on)": "ja",
     "AnkiTool Japanese Grammar V16.0 (Add-on)": "ja",
+    "AnkiTool Chinese V17.0 (Add-on)": "zh",
     "AnkiTool Chinese V16.0 (Add-on)": "zh",
     "AnkiTool Chinese V15.0 (Add-on)": "zh",
+    "AnkiTool Chinese Grammar V17.0 (Add-on)": "zh",
     "AnkiTool Chinese Grammar V16.0 (Add-on)": "zh",
+    "AnkiTool Korean V17.0 (Add-on)": "ko",
+    "AnkiTool Korean Grammar V17.0 (Add-on)": "ko",
 }
 
 
@@ -109,7 +123,8 @@ def get_audio_multilang(text: str, lang: str, voice: str = None, rate: str = Non
             return result
 
     if _install_gtts():
-        return get_audio_gtts(text, "ja")
+        # gTTS dùng lang_code ("ja" | "zh" | "ko")
+        return get_audio_gtts(text, lang)
 
     return ""
 

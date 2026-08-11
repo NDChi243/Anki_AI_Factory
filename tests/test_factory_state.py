@@ -56,7 +56,8 @@ for _n in ("QVBoxLayout", "QHBoxLayout", "QGridLayout", "QFormLayout", "QLabel",
            "QDoubleSpinBox", "QSpinBox", "QSlider", "QColorDialog", "QGroupBox",
            "QListWidget", "QProgressBar", "QTextBrowser", "QTextEdit", "QTableWidget",
            "QTableWidgetItem", "QScrollArea", "QWidget", "QAbstractItemView",
-           "QTimer", "QAction"):
+           "QTimer", "QAction", "QTreeWidget", "QTreeWidgetItem", "QInputDialog",
+           "QMenu"):
     aqt_qt.__dict__[_n] = lambda *a, **k: MagicMock()
 aqt_qt.QColor = type("QColor", (), {})
 aqt_qt.QApplication = MagicMock()
@@ -214,3 +215,59 @@ class TestFactoryState:
             f._restore_current_flow()
             assert f._ai_attached_paths == [ref]
             assert f.ai_text_input.toPlainText() == "text+file"
+
+
+class TestComboMigration:
+    """Migration combo: chỉ xóa card thừa (ord>=keep_count), giữ card mode chính."""
+
+    def test_collect_template_fields_captures_all(self):
+        """Phải thu thập đủ field template tham chiếu (tránh CardTypeError khi save)."""
+        import __init__ as addon
+        from mode import LANG_TEMPLATES, LANG_GRAMMAR_TEMPLATES
+        fields = addon.AnkiSmartFactory._collect_template_fields(LANG_TEMPLATES["japanese"])
+        for f in ("Front", "Meaning", "Furigana", "JLPT Level", "Topic",
+                  "Sino-Vietnamese", "Vocab Audio", "Example", "Example Audio",
+                  "Example in Vietnamese", "Example2", "Example2 in Vietnamese"):
+            assert f in fields, f"Thiếu field {f}"
+        zh = addon.AnkiSmartFactory._collect_template_fields(LANG_TEMPLATES["chinese"])
+        for f in ("Front", "Pinyin", "HSK Level", "Traditional"):
+            assert f in zh, f"Thiếu field {f}"
+        ko = addon.AnkiSmartFactory._collect_template_fields(LANG_TEMPLATES["korean"])
+        for f in ("Front", "Romanization", "TOPIK Level", "Sino-Vietnamese",
+                  "Vocab Audio", "Example", "Example Romanization",
+                  "Example in Vietnamese", "Example2", "Example2 in Vietnamese"):
+            assert f in ko, f"Thiếu field {f}"
+        g = addon.AnkiSmartFactory._collect_template_fields(LANG_GRAMMAR_TEMPLATES["japanese"])
+        assert "Pattern" in g
+        gko = addon.AnkiSmartFactory._collect_template_fields(LANG_GRAMMAR_TEMPLATES["korean"])
+        assert "Pattern" in gko
+        assert "Romanization" in gko
+
+    def test_drop_extra_combo_cards_keeps_first(self):
+        import __init__ as addon
+        from unittest.mock import patch
+        # Mock addon.mw.col cho migration
+        mw_mock = MagicMock()
+        mw_mock.col.find_notes = MagicMock(return_value=[1, 2])
+        mw_mock.col.db.list = MagicMock(
+            side_effect=lambda sql, nid, k: [100 + nid * 10, 200 + nid * 10]
+        )
+        mw_mock.col.remCards = MagicMock()
+        with patch.object(addon, "mw", mw_mock):
+            addon.AnkiSmartFactory._drop_extra_combo_cards(None, mid=42, keep_count=1)
+        # find_notes gọi với query đúng mid
+        mw_mock.col.find_notes.assert_called_once()
+        # remCards được gọi với các card thừa (ord>=1)
+        mw_mock.col.remCards.assert_called()
+        removed = mw_mock.col.remCards.call_args[0][0]
+        assert len(removed) >= 2
+
+    def test_drop_extra_no_notes(self):
+        import __init__ as addon
+        from unittest.mock import patch
+        mw_mock = MagicMock()
+        mw_mock.col.find_notes = MagicMock(return_value=[])
+        mw_mock.col.remCards = MagicMock()
+        with patch.object(addon, "mw", mw_mock):
+            addon.AnkiSmartFactory._drop_extra_combo_cards(None, mid=42, keep_count=1)
+        mw_mock.col.remCards.assert_not_called()

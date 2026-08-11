@@ -29,6 +29,14 @@ from .batch_processor import (
     create_decks_from_organization,
     estimate_batch_cost,
 )
+from .deck_manager import (
+    get_deck_tree,
+    create_deck,
+    rename_deck,
+    delete_deck,
+    get_deck_card_count,
+    refresh_anki,
+)
 
 __all__ = [
     "safe_parse_json",
@@ -50,4 +58,10 @@ __all__ = [
     "organize_decks_with_ai",
     "create_decks_from_organization",
     "estimate_batch_cost",
+    "get_deck_tree",
+    "create_deck",
+    "rename_deck",
+    "delete_deck",
+    "get_deck_card_count",
+    "refresh_anki",
 ]

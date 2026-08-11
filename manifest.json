@@ -1,14 +1,14 @@
 {
   "name": "AnkiTool Multi-Language",
-  "version": "16.0.0",
-  "description": "Multi-language vocabulary factory for Anki — Japanese & Chinese card creation with AI-powered extraction, TTS audio, and interactive learning templates.",
+  "version": "17.0.0",
+  "description": "Multi-language vocabulary factory for Anki — Japanese, Chinese & Korean card creation with AI-powered extraction, TTS audio, and interactive learning templates.",
   "author": "AnkiTool Team",
   "license": "MIT",
   "anki": {
     "min_version": "2.1.50",
     "max_version": "2.1.99"
   },
-  "keywords": ["japanese", "chinese", "vocabulary", "ai", "tts", "language-learning"],
+  "keywords": ["japanese", "chinese", "korean", "vocabulary", "ai", "tts", "language-learning"],
   "categories": ["learning", "import", "templates"],
   "dependencies": {
     "python": ">=3.9",
@@ -16,9 +16,10 @@
   },
   "config": {
     "ai_providers": ["openai", "deepseek", "ollama", "lmstudio", "openrouter"],
-    "languages": ["japanese", "chinese"],
+    "languages": ["japanese", "chinese", "korean"],
     "tts_engines": ["edge-tts", "gtts", "voicevox"],
-    "template_count": 5
+    "template_count": 1,
+    "study_modes": ["qa", "vn", "wb", "pron", "lg"]
   },
   "entry_point": "start_smart_factory",
   "shortcut": "Ctrl+Shift+I"

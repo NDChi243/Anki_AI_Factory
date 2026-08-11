@@ -16,11 +16,13 @@ if _addon_root not in sys.path:
 
 class TestApiConfigExtras:
     def test_defaults(self):
+        """Default config khi CHƯA có file ai_config.json (mock để không phụ thuộc file thật)."""
         from utils.ai_extractor import get_api_config
-        cfg = get_api_config()
-        assert cfg.get("max_chars") == 45000
-        assert cfg.get("chunk_size") == 8000
-        assert cfg.get("reasoning_effort") == ""
+        with patch("utils.ai_extractor._load_config", return_value={}):
+            cfg = get_api_config()
+            assert cfg.get("max_chars") == 45000
+            assert cfg.get("chunk_size") == 8000
+            assert cfg.get("reasoning_effort") == ""
 
     def test_sanitizes_old_large_chunk(self):
         """Config cũ lưu chunk 45k → tự hạ xuống 15k khi đọc (tránh cắt output)."""
@@ -33,13 +35,16 @@ class TestApiConfigExtras:
             assert cfg["max_chars"] == 45000
 
     def test_save_roundtrip(self):
+        """max_chars có SÀN 10000 theo chủ ý thiết kế (khớp với sàn dùng
+        trong get_api_config() dòng ~244) — input 8000 sẽ bị nâng lên
+        10000, không giữ nguyên. chunk_size sàn 3000 nên 8000 giữ nguyên."""
         from utils.ai_extractor import save_api_config
         with patch("utils.ai_extractor._save_config") as m:
             save_api_config("k", "https://x/v1", "deepseek-chat", 0.3,
                             max_chars=8000, chunk_size=8000, reasoning_effort="medium")
             saved = m.call_args[0][0]
             assert saved["chunk_size"] == 8000
-            assert saved["max_chars"] == 8000
+            assert saved["max_chars"] == 10000  # clamp lên sàn, không phải 8000
             assert saved["reasoning_effort"] == "medium"
 
     def test_save_clamps(self):

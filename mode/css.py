@@ -66,6 +66,20 @@ body{background:var(--bg);margin:0;padding:12px;}
 .card.nightMode .wb-result.wb-err{background:#2e0a0a;color:#ff6b6b;}
 .pron-wrap{text-align:center;padding:0 24px 16px;}
 .pron-lbl{font-size:11px;font-weight:700;color:var(--muted);letter-spacing:1.5px;text-transform:uppercase;margin-bottom:8px;}
+.mode-bar{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;padding:12px 16px 6px;}
+.mode-btn{padding:6px 12px;border:1.5px solid var(--border);border-radius:16px;background:var(--card-bg);color:var(--muted);font-size:12px;font-weight:700;cursor:pointer;transition:all .18s;}
+.mode-btn:hover{border-color:var(--accent2);color:var(--accent2);}
+.mode-btn.active{background:var(--accent2);border-color:var(--accent2);color:#fff;}
+.mode-panel{display:block;}
+.combo-check{display:flex;gap:8px;justify-content:center;padding:0 24px 14px;}
+.combo-check input{flex:1;max-width:280px;border:2px solid var(--border);border-radius:8px;padding:8px 14px;font-size:16px;background:var(--bg);color:var(--text);outline:none;}
+.combo-check input:focus{border-color:var(--accent2);}
+.combo-check button{padding:8px 18px;border-radius:8px;border:none;background:var(--accent);color:#fff;font-weight:700;font-size:14px;cursor:pointer;}
+.combo-res{text-align:center;font-size:15px;font-weight:700;display:none;padding:8px;border-radius:8px;margin:0 24px 14px;}
+.combo-res.combo-ok{color:#27ae60;background:#d5f5e3;}
+.combo-res.combo-err{color:#c0392b;background:#fdecea;}
+.card.nightMode .combo-res.combo-ok{background:#0a2e18;color:#4ae89a;}
+.card.nightMode .combo-res.combo-err{background:#2e0a0a;color:#ff6b6b;}
 ''' + _HW_CSS
 
 
@@ -137,10 +151,45 @@ def css_chinese():
     return _ZH_THEME + _BASE_CSS + _ZH_SPECIFIC + _ZH_EXTRA + _SHARED_UI_CSS
 
 
+# ═══════════════════════════════════════════════════════════
+#  KOREAN CSS
+# ═══════════════════════════════════════════════════════════
+
+_KO_THEME = '''
+@import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;700;900&family=Noto+Serif+KR:wght@700&display=swap');
+:root {
+    --bg:#f7f5f8;--card-bg:#ffffff;--border:#e2dce8;--text:#1a1a2e;
+    --muted:#7a7a8a;--accent:#c0392b;--accent-soft:#fdecea;
+    --accent2:#2d6fa3;--accent2-soft:#e8f2f8;
+    --ex-bg:#f9f7fa;--ex-border:#d5c9e0;--shadow:0 4px 20px rgba(0,0,0,0.07);--r:16px;
+    --flag:"🇰🇷";
+}
+body{font-family:'Noto Sans KR','Malgun Gothic','Apple SD Gothic Neo',sans-serif;}
+'''
+
+_KO_SPECIFIC = '''
+.pinyin{font-size:16px;color:var(--muted);letter-spacing:.05em;min-height:22px;margin-bottom:4px;}
+.hanzi{font-family:'Noto Serif KR','Malgun Gothic',serif;font-size:60px;font-weight:700;color:var(--text);line-height:1.2;}
+.ep{font-size:13px;color:var(--accent2);margin-bottom:4px;}
+'''
+
+_KO_EXTRA = '''
+body{background:linear-gradient(150deg,#f7f5f8 0%,#fef4f4 100%);}
+.ch{background:linear-gradient(135deg,#c60c30 0%,#8e0a22 60%,#c60c30 100%);position:relative;}
+.ch::before{content:'🎎';font-size:13px;opacity:.45;margin-right:6px;}
+.cw{border-left:3px solid #c60c30;}
+'''
+
+
+def css_korean():
+    return _KO_THEME + _BASE_CSS + _KO_SPECIFIC + _KO_EXTRA + _SHARED_UI_CSS
+
+
 # LANG_CSS Registry
 LANG_CSS = {
     "japanese": css_japanese,
     "chinese":  css_chinese,
+    "korean":   css_korean,
 }
 
 
@@ -165,8 +214,13 @@ def css_chinese_grammar():
     return _ZH_THEME + _BASE_CSS + _ZH_SPECIFIC + _GRAMMAR_EXTRA + _SHARED_UI_CSS
 
 
+def css_korean_grammar():
+    return _KO_THEME + _BASE_CSS + _KO_SPECIFIC + _GRAMMAR_EXTRA + _SHARED_UI_CSS
+
+
 # LANG_GRAMMAR_CSS Registry
 LANG_GRAMMAR_CSS = {
     "japanese": css_japanese_grammar,
     "chinese":  css_chinese_grammar,
+    "korean":   css_korean_grammar,
 }

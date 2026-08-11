@@ -157,6 +157,7 @@ DE_WB_POOL = '["a","e","i","o","u","s","t","r","n","l","m","d","p","c","h","b","
 WB_POOLS = {
     "japanese": JA_WB_POOL,
     "chinese":  ZH_WB_POOL,
+    "korean":   KO_WB_POOL,
 }
 
 
@@ -321,5 +322,95 @@ _LG_JS_BODY = r"""
         :'<span class="lg-blank">_</span>';
     }).join('');
   }
+})();
+"""
+
+
+# ═══════════════════════════════════════════════════════════
+#  COMBO MODE ENGINE — card gộp 5 chế độ trong 1 thẻ
+#  - Đọc mode từ window._aiFactoryMode (reviewer hook) hoặc localStorage
+#  - Chuyển đổi panel mode (qa/vn/wb/pron/lg) qua nút bấm
+#  - Mode qa dùng type-answer chuẩn Anki; vn/pron tự kiểm tra bằng JS
+# ═══════════════════════════════════════════════════════════
+_COMBO_MODE_JS = r"""
+(function(){
+  var MODES=['qa','vn','wb','pron','lg'];
+  var mode='qa';
+  if(window._aiFactoryMode && MODES.indexOf(window._aiFactoryMode)>=0) mode=window._aiFactoryMode;
+  try{ var ls=localStorage.getItem('ai_factory_mode'); if(ls && MODES.indexOf(ls)>=0) mode=ls; }catch(e){}
+  // Dữ liệu tham chiếu (đọc từ hidden spans do Python render)
+  function txt(id){ var el=document.getElementById(id); return el?el.textContent.trim():''; }
+  var refFront=txt('combo-front');
+  var refMeaning=txt('combo-meaning');
+  var refPron=txt('combo-pron');
+  // ── Hiển thị panel theo mode ──────────────────────────
+  function show(m){
+    MODES.forEach(function(x){
+      var p=document.getElementById('mode-panel-'+x);
+      if(p) p.style.display=(x===m)?'':'none';
+    });
+    var btns=document.querySelectorAll('.mode-btn');
+    for(var i=0;i<btns.length;i++){
+      var b=btns[i];
+      b.classList.toggle('active', b.getAttribute('data-mode')===m);
+    }
+    // Type answer của Anki (type-answer) chỉ nên "sống" ở mode qa.
+    // Ở mode khác: tự động điền đúng đáp án để Anki không đánh sai khi Show Answer.
+    // (Không dùng disabled — một số phiên bản Anki bỏ qua input disabled khi type answer)
+    var typeInput=document.querySelector('#mode-panel-qa input');
+    if(typeInput){
+      if(m==='qa'){ typeInput.value=''; }
+      else { typeInput.value=refMeaning; }
+    }
+  }
+  // ── Nút chuyển mode ───────────────────────────────────
+  var switcher=document.querySelectorAll('.mode-btn');
+  for(var j=0;j<switcher.length;j++){
+    (function(btn){
+      btn.addEventListener('click', function(){
+        mode=btn.getAttribute('data-mode');
+        try{ localStorage.setItem('ai_factory_mode', mode); }catch(e){}
+        // Đồng bộ mode với Anki config qua bridge (nếu có)
+        try{ if(typeof pycmd==='function') pycmd('ai_factory_set_mode:'+mode); }catch(e2){}
+        show(mode);
+      });
+    })(switcher[j]);
+  }
+  // ── Self-check mode vn (Việt → Ngôn ngữ) ──────────────
+  var vnBtn=document.getElementById('vn-check');
+  if(vnBtn){
+    vnBtn.addEventListener('click', function(){
+      var inp=document.getElementById('vn-input');
+      var res=document.getElementById('vn-result');
+      if(!inp||!res) return;
+      var a=(inp.value||'').trim();
+      res.style.display='block';
+      if(a===refFront){ res.className='combo-res combo-ok'; res.textContent='✅ Chính xác!'; }
+      else { res.className='combo-res combo-err'; res.textContent='❌ Chưa đúng → '+refFront; }
+    });
+  }
+  // ── Self-check mode pron (Furigana/Pinyin) ────────────
+  var pronBtn=document.getElementById('pron-check');
+  if(pronBtn){
+    pronBtn.addEventListener('click', function(){
+      var inp=document.getElementById('pron-input');
+      var res=document.getElementById('pron-result');
+      if(!inp||!res) return;
+      var a=(inp.value||'').trim();
+      res.style.display='block';
+      if(a===refPron){ res.className='combo-res combo-ok'; res.textContent='✅ Chính xác!'; }
+      else { res.className='combo-res combo-err'; res.textContent='❌ Chưa đúng → '+refPron; }
+    });
+  }
+  // ── Khởi tạo ban đầu ──────────────────────────────────
+  show(mode);
+  // Nếu ở mode wb/lg, cần khởi động lại game sau khi panel hiện
+  if(mode==='wb' && window._wbInit) window._wbInit();
+  if(mode==='lg' && window._lgInit) window._lgInit();
+  // Lắng nghe hook reviewer inject mode mới (nếu đổi giữa chừng)
+  window.addEventListener('ai-factory-mode', function(ev){
+    var m=ev.detail;
+    if(MODES.indexOf(m)>=0){ mode=m; show(m); if(m==='wb'&&window._wbInit)window._wbInit(); if(m==='lg'&&window._lgInit)window._lgInit(); }
+  });
 })();
 """

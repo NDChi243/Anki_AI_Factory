@@ -356,10 +356,16 @@ class TestEncryption:
         assert decrypted == key
 
     def test_deterministic(self):
-        from utils.ai_extractor import _encrypt_api_key
+        """Fernet (AES-GCM) CỐ Ý sinh ciphertext khác nhau mỗi lần mã hoá
+        cùng một plaintext — do dùng nonce/timestamp ngẫu nhiên, đây là
+        thuộc tính bảo mật đúng đắn (chống phân tích pattern), không phải
+        bug. So sánh k1 == k2 sẽ luôn fail khi có cài `cryptography`.
+        Điều cần đảm bảo là GIẢI MÃ cả hai đều ra đúng plaintext gốc."""
+        from utils.ai_extractor import _encrypt_api_key, _decrypt_api_key
         k1 = _encrypt_api_key("test-key")
         k2 = _encrypt_api_key("test-key")
-        assert k1 == k2
+        assert _decrypt_api_key(k1) == "test-key"
+        assert _decrypt_api_key(k2) == "test-key"
 
 
 # ═══════════════════════════════════════════════════════════

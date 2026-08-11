@@ -1,5 +1,5 @@
 """
-AnkiTool Multi-Language V16.0 — Japanese & Chinese.
+AnkiTool Multi-Language V17.0 — Japanese, Chinese & Korean.
 
 Multi-language vocabulary factory for Anki note creation, templates, and audio.
 """
@@ -48,15 +48,24 @@ from workers.deck_scan_worker import DeckScanWorker
 
 # Import UI dialogs (đã tách ra ui/)
 from ui import AiChatDialog, show_ai_settings_dialog, show_diff_meaning_dialog, show_ai_preview_dialog
+from ui.deck_manager_dialog import DeckManagerDialog
+from utils.deck_manager import refresh_anki
 
 # Import glassmorphism theme engine
 from ui.theme import (
     load_config as load_theme_config,
-    apply_theme, ThemeDialog, snap_maximize,
+    apply_theme, ThemeDialog, snap_maximize, RatioSplitter,
 )
 
 # Import hooks (đã tách ra hooks/)
 from hooks.reviewer import register_hooks
+from hooks.overview_mode import (
+    register_overview_hooks,
+    get_study_mode,
+    set_study_mode,
+    MODES as STUDY_MODES,
+    CONF_LANG_KEY,
+)
 
 # ═══════════════════════════════════════════════════════════
 #  MAIN DIALOG
@@ -65,7 +74,7 @@ class AnkiSmartFactory(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("AnkiTool Multi-Lang V16.0 — Vocabulary Factory")
+        self.setWindowTitle("AnkiTool Multi-Lang V17.0 — Vocabulary Factory")
         # Cho phép kéo thả cửa sổ tự do (thích ứng mọi kích thước, chia đôi màn hình)
         self.setMinimumSize(640, 420)
         self.resize(1300, 900)
@@ -235,8 +244,8 @@ class AnkiSmartFactory(QDialog):
         top.addWidget(lbl_tip)
         root.addLayout(top)
 
-        # ── MAIN SPLITTER (chia đôi, kéo thả thích ứng) ──
-        self.main_splitter = QSplitter(Qt.Orientation.Horizontal)
+        # ── MAIN SPLITTER (chia đôi, kéo thả 3:7, thích ứng) ──
+        self.main_splitter = RatioSplitter()
 
         # ── LEFT ─────────────────────────────────────────
         left_panel = QWidget()
@@ -245,7 +254,7 @@ class AnkiSmartFactory(QDialog):
         left.setSpacing(6)
 
         # Language selector
-        self.lang_grp = QGroupBox("🇯🇵 Tiếng Nhật")
+        self.lang_grp = QGroupBox("🌐 Ngôn ngữ")
         lang_layout = QHBoxLayout()
 
         self.btn_lang = {}
@@ -266,7 +275,7 @@ class AnkiSmartFactory(QDialog):
         self.btn_mode_vocab.setCheckable(True)
         self.btn_mode_vocab.setChecked(True)
         self.btn_mode_vocab.setStyleSheet(
-            "padding:10px;font-weight:bold;border-radius:10px;"
+            "padding:8px;font-weight:bold;border-radius:10px;"
             "QPushButton:checked{background:#2ecc71;color:white;border:2px solid #27ae60;}"
             "QPushButton:!checked{background:rgba(255,255,255,0.08);color:#eaf0f6;border:1px solid rgba(255,255,255,0.18);}"
         )
@@ -275,7 +284,7 @@ class AnkiSmartFactory(QDialog):
         self.btn_mode_grammar = QPushButton("📘 Ngữ pháp")
         self.btn_mode_grammar.setCheckable(True)
         self.btn_mode_grammar.setStyleSheet(
-            "padding:10px;font-weight:bold;border-radius:10px;"
+            "padding:8px;font-weight:bold;border-radius:10px;"
             "QPushButton:checked{background:#34495e;color:white;border:2px solid #2c3e50;}"
             "QPushButton:!checked{background:rgba(255,255,255,0.08);color:#eaf0f6;border:1px solid rgba(255,255,255,0.18);}"
         )
@@ -290,6 +299,19 @@ class AnkiSmartFactory(QDialog):
         self.deck_chooser.addItems(mw.col.decks.all_names())
         bar.addWidget(QLabel("📦 Deck:"), 0)
         bar.addWidget(self.deck_chooser, 1)
+        btn_refresh_deck = QPushButton("🔄")
+        btn_refresh_deck.setToolTip("Làm mới danh sách deck từ Anki")
+        btn_refresh_deck.setMaximumWidth(36)
+        btn_refresh_deck.clicked.connect(self._refresh_deck_chooser)
+        bar.addWidget(btn_refresh_deck, 0)
+        btn_manage_deck = QPushButton("🗂️ Quản Lý Deck")
+        btn_manage_deck.setProperty("class", "info")
+        btn_manage_deck.setToolTip(
+            "Tạo, đổi tên, xóa Parent/Sub Deck ngay trong add-on.\n"
+            "Mọi thay đổi được đồng bộ tức thì vào Anki."
+        )
+        btn_manage_deck.clicked.connect(self._open_deck_manager)
+        bar.addWidget(btn_manage_deck, 0)
         btn_load = QPushButton("📁 MỞ FILE (JSON/TXT)")
         btn_load.setProperty("class", "info")
         btn_load.clicked.connect(self._load_from_file)
@@ -314,7 +336,7 @@ class AnkiSmartFactory(QDialog):
 
         self.btn_ai_settings = QPushButton("⚙️ Cài Đặt API")
         self.btn_ai_settings.setStyleSheet(
-            "padding:6px 14px;background:#8e44ad;color:white;"
+            "padding:5px 8px;background:#8e44ad;color:white;"
             "font-weight:bold;border-radius:6px;border:none;"
         )
         self.btn_ai_settings.clicked.connect(self._show_ai_settings)
@@ -322,7 +344,7 @@ class AnkiSmartFactory(QDialog):
 
         self.btn_ai_clear_text = QPushButton("🗑 Xóa Text")
         self.btn_ai_clear_text.setStyleSheet(
-            "padding:6px 10px;background:#95a5a6;color:white;"
+            "padding:5px 8px;background:#95a5a6;color:white;"
             "font-weight:bold;border-radius:6px;border:none;"
         )
         self.btn_ai_clear_text.clicked.connect(self._ai_clear_text)
@@ -330,7 +352,7 @@ class AnkiSmartFactory(QDialog):
 
         self.btn_ai_extract = QPushButton("🤖 AI Trích Xuất")
         self.btn_ai_extract.setStyleSheet(
-            "padding:6px 18px;background:#e67e22;color:white;"
+            "padding:5px 10px;background:#e67e22;color:white;"
             "font-weight:bold;border-radius:6px;border:none;font-size:13px;"
         )
         self.btn_ai_extract.clicked.connect(self._ai_extract)
@@ -339,7 +361,7 @@ class AnkiSmartFactory(QDialog):
 
         self.btn_ai_batch = QPushButton("📋 Batch Từ Vựng")
         self.btn_ai_batch.setStyleSheet(
-            "padding:6px 14px;background:#2ecc71;color:white;"
+            "padding:5px 8px;background:#2ecc71;color:white;"
             "font-weight:bold;border-radius:6px;border:none;font-size:12px;"
         )
         self.btn_ai_batch.setToolTip(
@@ -352,7 +374,7 @@ class AnkiSmartFactory(QDialog):
 
         self.btn_ai_chat = QPushButton("💬 Gửi")
         self.btn_ai_chat.setStyleSheet(
-            "padding:6px 18px;background:#2980b9;color:white;"
+            "padding:5px 10px;background:#2980b9;color:white;"
             "font-weight:bold;border-radius:6px;border:none;font-size:13px;"
         )
         self.btn_ai_chat.setToolTip(
@@ -365,7 +387,7 @@ class AnkiSmartFactory(QDialog):
 
         self.btn_ai_stop = QPushButton("⏹ Dừng")
         self.btn_ai_stop.setStyleSheet(
-            "padding:6px 12px;background:#e74c3c;color:white;"
+            "padding:5px 8px;background:#e74c3c;color:white;"
             "font-weight:bold;border-radius:6px;border:none;font-size:12px;"
         )
         self.btn_ai_stop.setToolTip("Dừng yêu cầu AI đang chạy")
@@ -513,6 +535,13 @@ class AnkiSmartFactory(QDialog):
         self.spin_speed.setToolTip("Tốc độ phát audio mặc định cho thẻ học\n(0.25× = chậm nhất, 4.0× = nhanh nhất)")
         self.spin_speed.valueChanged.connect(self._on_speed_changed)
         vgl.addWidget(self.spin_speed, 0)
+        # ── Chế độ học mặc định (đồng bộ với Study now của Onigiri) ──
+        vgl.addSpacing(12)
+        vgl.addWidget(QLabel("🎯 Mode:"), 0)
+        self.cbo_study_mode = QComboBox()
+        self.cbo_study_mode.setMinimumWidth(130)
+        self.cbo_study_mode.currentIndexChanged.connect(self._on_study_mode_changed)
+        vgl.addWidget(self.cbo_study_mode, 0)
         voice_grp.setLayout(vgl)
         left.addWidget(voice_grp)
 
@@ -574,8 +603,7 @@ class AnkiSmartFactory(QDialog):
         self.main_splitter.setStretchFactor(0, 5)
         self.main_splitter.setStretchFactor(1, 5)
         self.main_splitter.setSizes([660, 640])
-        # Cho phép kéo thanh phân cách tự do (2 cột co/giãn thích ứng)
-        self.main_splitter.setChildrenCollapsible(True)
+        # Thanh phân cách kéo mượt, mỗi cột giới hạn 30%–70% (3:7)
         self.main_splitter.setHandleWidth(8)
         root.addWidget(self.main_splitter, 1)
 
@@ -587,13 +615,34 @@ class AnkiSmartFactory(QDialog):
         dlg = ThemeDialog(self)
         dlg.exec()
 
+    def _open_deck_manager(self):
+        """Mở dialog quản lý Parent/Sub Deck (tạo/sửa/xóa, đồng bộ tức thì)."""
+        dlg = DeckManagerDialog(self)
+        dlg.exec()
+        # Sau khi đóng dialog, làm mới deck_chooser để phản ánh thay đổi
+        self._refresh_deck_chooser()
+
+    def _refresh_deck_chooser(self):
+        """Làm mới danh sách deck trong deck_chooser từ Anki collection."""
+        try:
+            current = self.deck_chooser.currentText()
+            names = mw.col.decks.all_names()
+            self.deck_chooser.blockSignals(True)
+            self.deck_chooser.clear()
+            self.deck_chooser.addItems(names)
+            if current in names:
+                self.deck_chooser.setCurrentText(current)
+            self.deck_chooser.blockSignals(False)
+        except Exception as e:
+            logger.warning("Lỗi làm mới deck_chooser: %s", e)
+
     def _apply_lang_button_styles(self):
         """Áp dụng style chuẩn quốc kỳ cho nút ngôn ngữ"""
         default_style = """
         QPushButton {
-            padding: 12px 20px;
+            padding: 8px 14px;
             font-weight: bold;
-            font-size: 14px;
+            font-size: 13px;
             border-radius: 12px;
             border: 1px solid rgba(255,255,255,0.18);
             background: rgba(255,255,255,0.08);
@@ -622,6 +671,15 @@ class AnkiSmartFactory(QDialog):
                     border: 2px solid #de2910;
                     font-size: 15px;
                 }
+            """,
+            "korean": """
+                QPushButton:checked {
+                    background: qlineargradient(x1:0, y1:0, x2:1, y2:1,
+                        stop:0 #ffffff, stop:1 #f5f5f5);
+                    color: #c60c30;
+                    border: 2px solid #c60c30;
+                    font-size: 15px;
+                }
             """
         }
 
@@ -634,6 +692,11 @@ class AnkiSmartFactory(QDialog):
             # Lưu trạng thái luồng hiện tại trước khi chuyển ngôn ngữ
             self._save_current_flow()
         self._current_lang = lang_key
+        # Lưu ngôn ngữ đang chọn để selector Overview hiển thị đúng label mode
+        try:
+            mw.col.conf[CONF_LANG_KEY] = lang_key
+        except Exception:
+            pass
         self._on_lang_changed()
 
     def _on_lang_changed(self):
@@ -646,9 +709,9 @@ class AnkiSmartFactory(QDialog):
         # Cập nhật tiêu đề group box ngôn ngữ
         self.lang_grp.setTitle(cfg["label"])
         if self._is_grammar:
-            self.setWindowTitle(f"AnkiTool Multi-Lang V16.0 — {cfg['label']} (Ngữ pháp)")
+            self.setWindowTitle(f"AnkiTool Multi-Lang V17.0 — {cfg['label']} (Ngữ pháp)")
         else:
-            self.setWindowTitle(f"AnkiTool Multi-Lang V16.0 — {cfg['label']}")
+            self.setWindowTitle(f"AnkiTool Multi-Lang V17.0 — {cfg['label']}")
 
         self.lbl_level.setText(cfg["level_label"])
         self.cbo_level.clear()
@@ -680,7 +743,7 @@ class AnkiSmartFactory(QDialog):
             )
         else:
             self.ai_text_input.setPlaceholderText(
-                "📝 Dán văn bản vào đây (300-800 ký tự là tối ưu nhất, ~50-100 từ). Hỗ trợ tiếng Nhật & tiếng Trung."
+                "📝 Dán văn bản vào đây (300-800 ký tự là tối ưu nhất, ~50-100 từ). Hỗ trợ tiếng Nhật, Trung & Hàn."
             )
 
         # Sync voice dropdown với ngôn ngữ hiện tại
@@ -703,6 +766,10 @@ class AnkiSmartFactory(QDialog):
 
         self.get_or_create_model()
 
+        # Đồng bộ dropdown chế độ học với cấu hình hiện tại
+        if hasattr(self, 'cbo_study_mode'):
+            self._sync_study_mode_combo()
+
         # Khôi phục text + file kẹp cho luồng (ngôn ngữ + mode) đang hiển thị
         self._restore_current_flow()
 
@@ -715,6 +782,45 @@ class AnkiSmartFactory(QDialog):
     def _on_speed_changed(self, value):
         lang = self._cfg()["lang_code"]
         set_default_speed(lang, round(value, 2))
+
+    def _sync_study_mode_combo(self):
+        """Đồng bộ dropdown mode với cấu hình hiện tại."""
+        try:
+            labels = {
+                "japanese": {
+                    "qa": "1. Nhật→Việt", "vn": "2. Việt→Nhật",
+                    "wb": "3. Ghép chữ", "pron": "4. Furigana", "lg": "5. Ẩn chữ",
+                },
+                "chinese": {
+                    "qa": "1. 中文→Việt", "vn": "2. Việt→中文",
+                    "wb": "3. Ghép chữ", "pron": "4. Pinyin", "lg": "5. Ẩn chữ",
+                },
+                "korean": {
+                    "qa": "1. 한국어→Việt", "vn": "2. Việt→한국어",
+                    "wb": "3. Ghép chữ", "pron": "4. Romanization", "lg": "5. Ẩn chữ",
+                },
+            }
+            lang = self._current_lang
+            lbl = labels.get(lang, labels["japanese"])
+            current = get_study_mode()
+            self.cbo_study_mode.blockSignals(True)
+            self.cbo_study_mode.clear()
+            for k in STUDY_MODES:
+                self.cbo_study_mode.addItem(lbl.get(k, k), k)
+            idx = self.cbo_study_mode.findData(current)
+            self.cbo_study_mode.setCurrentIndex(idx if idx >= 0 else 0)
+            self.cbo_study_mode.blockSignals(False)
+        except Exception as e:
+            logger.warning("Lỗi đồng bộ mode combo: %s", e)
+
+    def _on_study_mode_changed(self, index):
+        """Lưu chế độ học đã chọn vào config (đồng bộ với Study now Onigiri)."""
+        try:
+            data = self.cbo_study_mode.itemData(index)
+            if data:
+                set_study_mode(data)
+        except Exception as e:
+            logger.warning("Lỗi lưu study mode: %s", e)
 
     def _preview_voice(self):
         lang = self._cfg()["lang_code"]
@@ -778,6 +884,20 @@ class AnkiSmartFactory(QDialog):
   "example_2": "他在图书馆学习。",
   "example_2_pinyin": "Tā zài túshūguǎn xuéxí.",
   "example_2_vn": "Anh ấy học ở thư viện."
+}''',
+            "korean": '''{
+  "front": "먹다",
+  "romanization": "meokda",
+  "meaning": "ăn",
+  "sino_vietnamese": "",
+  "topik_level": "TOPIK I",
+  "topic": "Động từ",
+  "example": "아침에 밥을 먹어요.",
+  "example_romanization": "achime babeul meogeoyo.",
+  "example_vn": "Buổi sáng tôi ăn cơm.",
+  "example_2": "친구와 함께 저녁을 먹었어요.",
+  "example_2_romanization": "chin-guwa hamkke jeonyeogeul meogeosseoyo.",
+  "example_2_vn": "Tôi đã ăn tối cùng bạn bè."
 }'''
         }
 
@@ -810,6 +930,21 @@ class AnkiSmartFactory(QDialog):
   "example_2": "请把门关上。",
   "example_2_pinyin": "Qǐng bǎ mén guān shàng.",
   "example_2_vn": "Làm ơn đóng cửa lại."
+}''',
+            "korean": '''{
+  "pattern": "~아/어요",
+  "romanization": "a/eoyo",
+  "meaning": "dạng lịch sự thân mật (hiện tại)",
+  "topik_level": "TOPIK I",
+  "topic": "Kết thúc câu",
+  "usage": "Động từ/tính từ + 아요/어요",
+  "explanation": "Dạng kết thúc câu lịch sự thông dụng nhất trong giao tiếp.",
+  "example": "지금 학교에 가요.",
+  "example_romanization": "jigeum hakgyoe gayo.",
+  "example_vn": "Bây giờ tôi đi học.",
+  "example_2": "밥을 맛있게 먹어요.",
+  "example_2_romanization": "babeul masitge meogeoyo.",
+  "example_2_vn": "Tôi ăn cơm ngon lành."
 }'''
         }
 
@@ -1177,7 +1312,7 @@ class AnkiSmartFactory(QDialog):
                 logger.warning("Lỗi ghi lịch sử import: %s", e)
 
         msg = (
-            f"🚀 XUẤT XƯỞNG V16.0 THÀNH CÔNG! [{self._cfg()['label']}]\n"
+            f"🚀 XUẤT XƯỞNG V17.0 THÀNH CÔNG! [{self._cfg()['label']}]\n"
             f"──────────────────────────────\n"
             f"✨ Thêm mới   : {report['added']} thẻ\n"
             f"🔄 Cập nhật  : {report['updated']} thẻ\n"
@@ -1203,6 +1338,30 @@ class AnkiSmartFactory(QDialog):
             self.lbl_status.setText("⏸️ Đang dừng...")
             self.btn_cancel.setEnabled(False)
 
+    def _drop_extra_combo_cards(self, mid, keep_count):
+        """Migration combo: xóa các card thừa (ord >= keep_count) của model,
+        giữ nguyên card mode chính (ord 0) + lịch sử học."""
+        try:
+            nids = mw.col.find_notes(f'"mid:{mid}"')
+            if not nids:
+                return
+            card_ids = []
+            for nid in nids:
+                try:
+                    card_ids.extend(
+                        mw.col.db.list(
+                            "select id from cards where nid=? and ord>=?",
+                            nid, keep_count
+                        )
+                    )
+                except Exception:
+                    continue
+            if card_ids:
+                mw.col.remCards(card_ids)
+                logger.info("Migration combo: xóa %d card thừa (model %s)", len(card_ids), mid)
+        except Exception as e:
+            logger.warning("Migration combo cards: %s", e)
+
     def _force_rebuild_model(self):
         cfg = self._cfg()
         mm = mw.col.models
@@ -1215,6 +1374,20 @@ class AnkiSmartFactory(QDialog):
                 m['css'] = LANG_CSS[self._current_lang]()
                 tmpls = LANG_TEMPLATES[self._current_lang]
             tmpl_count = len(tmpls) // 2
+            # Đảm bảo đủ field trước khi save (model cũ có thể thiếu field)
+            existing = {f['name'] for f in m['flds']}
+
+            def _ensure_fields(field_set):
+                added = 0
+                for fn in field_set:
+                    if fn and fn not in existing:
+                        mm.add_field(m, mm.new_field(fn))
+                        existing.add(fn)
+                        added += 1
+                return added
+
+            _ensure_fields(cfg["all_fields"])
+            _ensure_fields(self._collect_template_fields(tmpls))
             for i in range(tmpl_count):
                 if i < len(m['tmpls']):
                     m['tmpls'][i]['qfmt'] = tmpls[i * 2]()
@@ -1225,9 +1398,13 @@ class AnkiSmartFactory(QDialog):
                     t['afmt'] = tmpls[i * 2 + 1]()
                     mm.add_template(m, t)
             # Remove extra templates if model has more than needed
+            had_extra = len(m['tmpls']) > tmpl_count
             while len(m['tmpls']) > tmpl_count:
                 mm.remove_template(m, m['tmpls'][-1])
             mm.save(m)
+            # Migration combo: xóa card thừa sau khi giảm template
+            if had_extra and not self._is_grammar:
+                self._drop_extra_combo_cards(m['id'], tmpl_count)
             showInfo(f"✅ Đã tái tạo model: {cfg['model_name']}")
         else:
             self.get_or_create_model()
@@ -1248,6 +1425,27 @@ class AnkiSmartFactory(QDialog):
 
         return None
 
+    @staticmethod
+    def _collect_template_fields(tmpls):
+        """Trích xuất mọi field name được tham chiếu trong template HTML.
+
+        Hỗ trợ {{Field}}, {{#Field}}...{{/Field}}, {{^Field}}, {{type:Field}}.
+        Đảm bảo model cũ luôn có đủ field khi migrate sang card combo.
+        """
+        fields = set()
+        for fn in tmpls:
+            try:
+                html = fn()
+            except Exception:
+                continue
+            for m in re.finditer(r"\{\{([#^/]?)([^{}\n]+?)\}\}", html):
+                raw = m.group(2).strip()
+                if raw.startswith("type:"):
+                    raw = raw.split(":", 1)[1].strip()
+                if raw and raw not in ("FrontSide", "Tags", "Deck", "Subdeck", "Card", "Type"):
+                    fields.add(raw)
+        return fields
+
     def get_or_create_model(self):
         cfg   = self._cfg()
         mm    = mw.col.models
@@ -1263,10 +1461,23 @@ class AnkiSmartFactory(QDialog):
 
         if m:
             existing = {f['name'] for f in m['flds']}
-            for fn in cfg["all_fields"]:
-                if fn not in existing:
-                    mm.add_field(m, mm.new_field(fn))
+
+            def _ensure_fields(field_set):
+                """Thêm field còn thiếu vào model, cập nhật lại tập existing."""
+                added = 0
+                for fn in field_set:
+                    if fn and fn not in existing:
+                        mm.add_field(m, mm.new_field(fn))
+                        existing.add(fn)
+                        added += 1
+                return added
+
+            # 1) Đủ field cấu hình (json_field_map/all_fields)
+            _ensure_fields(cfg["all_fields"])
+            # 2) Đủ field template tham chiếu (model cũ có thể thiếu → CardTypeError khi save)
+            _ensure_fields(self._collect_template_fields(tmpls))
             m['css'] = css
+            had_extra = len(m['tmpls']) > tmpl_count
             for i in range(tmpl_count):
                 if i < len(m['tmpls']):
                     m['tmpls'][i]['qfmt'] = tmpls[i * 2]()
@@ -1276,10 +1487,19 @@ class AnkiSmartFactory(QDialog):
                     t['qfmt'] = tmpls[i * 2]()
                     t['afmt'] = tmpls[i * 2 + 1]()
                     mm.add_template(m, t)
+            # Migration combo: đổi tên template đầu thành "Tổng hợp (5 chế độ)"
+            if had_extra and not self._is_grammar and len(cfg["template_names"]) > 0:
+                try:
+                    m['tmpls'][0]['name'] = cfg["template_names"][0]
+                except Exception:
+                    pass
             # Remove extra templates if model has more than needed
             while len(m['tmpls']) > tmpl_count:
                 mm.remove_template(m, m['tmpls'][-1])
             mm.save(m)
+            # Migration combo: xóa card thừa sau khi giảm template
+            if had_extra and not self._is_grammar:
+                self._drop_extra_combo_cards(m['id'], tmpl_count)
             return m
 
         m = mm.new(name)
@@ -1881,9 +2101,10 @@ class AnkiSmartFactory(QDialog):
 
 
 # ═══════════════════════════════════════════════════════════
-#  REVIEWER HOOKS (wired → hooks/reviewer.py)
+#  REVIEWER HOOKS (wired → hooks/reviewer.py) + OVERVIEW MODE
 # ═══════════════════════════════════════════════════════════
 register_hooks()
+register_overview_hooks()
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1894,7 +2115,7 @@ def start_smart_factory():
     mw.factory_dialog.show()
 
 
-action = QAction("🌐 AnkiTool Multi-Lang V16", mw)
+action = QAction("🌐 AnkiTool Multi-Lang V17.0", mw)
 action.setShortcut(QKeySequence("Ctrl+Shift+I"))
 qconnect(action.triggered, start_smart_factory)
 mw.form.menuTools.addAction(action)

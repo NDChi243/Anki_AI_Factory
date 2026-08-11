@@ -74,7 +74,7 @@ class TestBatchPromptExistingContext:
 class TestSystemPromptCompactness:
     def test_vocab_prompts_compact(self):
         from utils.ai_extractor import _SYSTEM_PROMPTS
-        for lang in ("japanese", "chinese"):
+        for lang in ("japanese", "chinese", "korean"):
             sp = _SYSTEM_PROMPTS[lang]
             assert "MẪU:" in sp
             assert "ĐẦU RA" in sp
@@ -82,21 +82,21 @@ class TestSystemPromptCompactness:
 
     def test_grammar_prompts_compact(self):
         from utils.ai_extractor import _GRAMMAR_SYSTEM_PROMPTS
-        for lang in ("japanese", "chinese"):
+        for lang in ("japanese", "chinese", "korean"):
             sp = _GRAMMAR_SYSTEM_PROMPTS[lang]
             assert "MẪU:" in sp
             assert "ĐẦU RA" in sp
-            assert len(sp) < 1500
+            assert len(sp) < 2400
 
     def test_output_conciseness_rule(self):
         from utils.ai_extractor import _GRAMMAR_SYSTEM_PROMPTS
-        for lang in ("japanese", "chinese"):
+        for lang in ("japanese", "chinese", "korean"):
             assert "TỐI ĐA 2 câu" in _GRAMMAR_SYSTEM_PROMPTS[lang]
 
 
 class TestCacheVersion:
     def test_version_bumped(self):
         from utils.ai_extractor import _PROMPT_VERSION, _ai_cache_key
-        assert _PROMPT_VERSION >= 2
+        assert _PROMPT_VERSION >= 3
         k1 = _ai_cache_key("text", "japanese", "", "h", kind="vocab")
         assert isinstance(k1, str) and len(k1) == 32

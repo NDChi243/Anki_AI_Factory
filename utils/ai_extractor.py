@@ -15,6 +15,7 @@ import time
 import base64
 import http.client
 import ssl
+import threading
 from typing import Optional, Callable, List
 from urllib.parse import urlparse
 
@@ -97,13 +98,28 @@ def _decrypt_api_key(encrypted_text: str) -> str:
 # ═══════════════════════════════════════════════════════════
 #  HTTP HELPER — Connection reuse + chunked reading
 # ═══════════════════════════════════════════════════════════
-# SSL context không verify (cho localhost/Ollama)
-_SSL_CONTEXT = ssl.create_default_context()
-_SSL_CONTEXT.check_hostname = False
-_SSL_CONTEXT.verify_mode = ssl.CERT_NONE
+# SSL context MẶC ĐỊNH: verify đầy đủ (dùng cho cloud API như
+# DeepSeek/OpenAI/OpenRouter — bảo vệ API key khỏi MITM).
+_SSL_CONTEXT_SECURE = ssl.create_default_context()
+
+# SSL context KHÔNG verify: CHỈ dùng khi host là localhost/127.0.0.1
+# (Ollama, LM Studio thường tự ký chứng chỉ hoặc chạy HTTP thuần).
+_SSL_CONTEXT_LOCAL = ssl.create_default_context()
+_SSL_CONTEXT_LOCAL.check_hostname = False
+_SSL_CONTEXT_LOCAL.verify_mode = ssl.CERT_NONE
+
+_LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+
+
+def _pick_ssl_context(host: str) -> ssl.SSLContext:
+    """Chọn SSL context: không verify chỉ khi host thực sự là local."""
+    if (host or "").lower() in _LOCAL_HOSTS:
+        return _SSL_CONTEXT_LOCAL
+    return _SSL_CONTEXT_SECURE
 
 # Connection pool cache: host → (HTTPSConnection | HTTPConnection)
-_CONN_POOL = {}
+_CONN_POOL: dict = {}
+_CONN_POOL_LOCK = threading.Lock()
 
 
 def _http_post_json(url: str, payload: dict, headers: dict,
@@ -122,16 +138,18 @@ def _http_post_json(url: str, payload: dict, headers: dict,
     port = parsed.port or (443 if parsed.scheme == "https" else 80)
     path = parsed.path + ("?" + parsed.query if parsed.query else "")
     use_ssl = parsed.scheme == "https"
+    ssl_context = _pick_ssl_context(host)
 
-    # Lấy hoặc tạo connection từ pool
+    # Lấy hoặc tạo connection từ pool (thread-safe)
     pool_key = f"{host}:{port}"
-    conn = _CONN_POOL.get(pool_key)
-    if conn is None:
-        if use_ssl:
-            conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=_SSL_CONTEXT)
-        else:
-            conn = http.client.HTTPConnection(host, port, timeout=timeout)
-        _CONN_POOL[pool_key] = conn
+    with _CONN_POOL_LOCK:
+        conn = _CONN_POOL.get(pool_key)
+        if conn is None:
+            if use_ssl:
+                conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=ssl_context)
+            else:
+                conn = http.client.HTTPConnection(host, port, timeout=timeout)
+            _CONN_POOL[pool_key] = conn
 
     body_bytes = json.dumps(payload).encode("utf-8")
     headers["Content-Length"] = str(len(body_bytes))
@@ -141,12 +159,13 @@ def _http_post_json(url: str, payload: dict, headers: dict,
     for attempt in range(max_retries + 1):
         try:
             if attempt > 0:
-                # Tạo connection mới nếu retry
+                # Tạo connection mới nếu retry (thread-safe)
                 if use_ssl:
-                    conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=_SSL_CONTEXT)
+                    conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=ssl_context)
                 else:
                     conn = http.client.HTTPConnection(host, port, timeout=timeout)
-                _CONN_POOL[pool_key] = conn
+                with _CONN_POOL_LOCK:
+                    _CONN_POOL[pool_key] = conn
 
             conn.request("POST", path, body=body_bytes, headers=headers)
             resp = conn.getresponse()
@@ -199,8 +218,7 @@ _DECK_VOCAB_CACHE_TTL = 30 * 60  # 30 phút
 
 
 def _ensure_cache_dir():
-    if not os.path.exists(_CACHE_DIR):
-        os.makedirs(_CACHE_DIR)
+    os.makedirs(_CACHE_DIR, exist_ok=True)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -217,8 +235,19 @@ def _load_config() -> dict:
 
 
 def _save_config(cfg: dict):
-    with open(_CONFIG_PATH, "w", encoding="utf-8") as f:
-        json.dump(cfg, f, indent=2, ensure_ascii=False)
+    """Ghi config với atomic write (tmp → rename) để tránh mất dữ liệu nếu crash."""
+    tmp_path = _CONFIG_PATH + ".tmp"
+    try:
+        with open(tmp_path, "w", encoding="utf-8") as f:
+            json.dump(cfg, f, indent=2, ensure_ascii=False)
+        os.replace(tmp_path, _CONFIG_PATH)
+    except Exception:
+        if os.path.exists(tmp_path):
+            try:
+                os.remove(tmp_path)
+            except Exception:
+                pass
+        raise
 
 
 def get_api_config() -> dict:
@@ -246,8 +275,8 @@ def get_api_config() -> dict:
     except Exception:
         cfg["max_chars"] = 45000
         cfg["chunk_size"] = 8000
-    # Decrypt API key nếu đã được encrypt
-    if cfg.get("api_key") and not cfg["api_key"].startswith("sk-"):
+    # Decrypt API key nếu đã được encrypt (f: = Fernet, x: = XOR)
+    if cfg.get("api_key") and cfg["api_key"].startswith(("f:", "x:")):
         cfg["api_key"] = _decrypt_api_key(cfg["api_key"])
     return cfg
 
@@ -353,7 +382,7 @@ def _format_token_report(token_info: dict) -> str:
 #  CACHE (AI results)
 # ═══════════════════════════════════════════════════════════
 # Bump version mỗi khi thay đổi prompt/chiến lược → invalidate cache cũ
-_PROMPT_VERSION = 2
+_PROMPT_VERSION = 3
 
 
 def _ai_cache_key(text: str, lang: str, instruction: str, existing_hash: str, kind: str = "vocab") -> str:
@@ -479,14 +508,49 @@ LUẬT:
 
 ĐẦU RA: CHỈ mảng JSON thuần, không markdown, không giải thích thừa. Cuối: {{"_comment":"≤15 từ"}}"""
 
+_KOREAN_JSON_TEMPLATE = """{
+  "front": "먹다",
+  "romanization": "meokda",
+  "meaning": "ăn",
+  "sino_vietnamese": "",
+  "topik_level": "TOPIK I",
+  "topic": "Động từ",
+  "example": "아침에 밥을 먹어요.",
+  "example_romanization": "achime babeul meogeoyo.",
+  "example_vn": "Buổi sáng tôi ăn cơm.",
+  "example_2": "친구와 함께 저녁을 먹었어요.",
+  "example_2_romanization": "chin-guwa hamkke jeonyeogeul meogeosseoyo.",
+  "example_2_vn": "Tôi đã ăn tối cùng bạn bè."
+}"""
+
+_KOREAN_SYSTEM_PROMPT = f"""Bạn là chuyên gia tiếng Hàn. Trích xuất TẤT CẢ từ vựng từ văn bản → mảng JSON chính xác.
+
+MẪU:
+{_KOREAN_JSON_TEMPLATE}
+
+LUẬT:
+1. Đủ 12 trường; thiếu → "". example_romanization & example_2_romanization LUÔN phải có, romanization chuẩn (Revised Romanization); thiếu → từ không hợp lệ.
+2. VÍ DỤ CÓ HỒN + ĐÚNG CẤP ĐỘ (quan trọng nhất):
+   - Ex1: khẩu ngữ đời thực (cà phê, nhắn tin, than thở, MXH...), cảm xúc thật, kết thúc câu tự nhiên (어요/아요/거야/잖아).
+   - Ex2: trang trọng, lịch sự (습니다/습니다/존댓말).
+   - Cấp độ ví dụ khớp TOPIK: TOPIK I → câu cực ngắn, đơn giản; TOPIK II → trung bình/phức tạp. TUYỆT ĐỐI không nhồi từ khó vào từ cấp thấp.
+   - TRÁNH câu SGK vô hồn. Từ đa nghĩa → 2 nghĩa khác nhau ở 2 ví dụ. Ví dụ ngắn gọn, 5-12 từ.
+3. CHỐNG TRÙNG: bỏ qua mọi từ trong "TỪ ĐÃ CÓ".
+4. CHÍNH XÁC: Hangul, romanization, ngữ pháp, từ vựng chuẩn. topic ngắn, đúng TOPIK.
+5. Xuất theo thứ tự xuất hiện trong văn bản.
+
+ĐẦU RA: CHỈ mảng JSON thuần, không markdown, không giải thích thừa. Cuối: {{"_comment":"≤15 từ"}}"""
+
 _SYSTEM_PROMPTS = {
     "japanese": _JAPANESE_SYSTEM_PROMPT,
     "chinese": _CHINESE_SYSTEM_PROMPT,
+    "korean": _KOREAN_SYSTEM_PROMPT,
 }
 
 _JSON_TEMPLATES = {
     "japanese": _JAPANESE_JSON_TEMPLATE,
     "chinese": _CHINESE_JSON_TEMPLATE,
+    "korean": _KOREAN_JSON_TEMPLATE,
 }
 
 
@@ -572,14 +636,54 @@ LUẬT:
 
 ĐẦU RA: CHỈ mảng JSON thuần, không markdown, không giải thích thừa. Cuối: {{"_comment":"≤15 từ"}}"""
 
+_KOREAN_GRAMMAR_JSON_TEMPLATE = """{
+  "pattern": "~아/어요",
+  "romanization": "a/eoyo",
+  "meaning": "dạng lịch sự thân mật (hiện tại)",
+  "topik_level": "TOPIK I",
+  "topic": "Kết thúc câu",
+  "usage": "Động từ/tính từ + 아요 (âm cuối 양/ㅗ/ㅏ) hoặc + 어요 (các âm còn lại)",
+  "explanation": "Dạng kết thúc câu lịch sự thông dụng nhất trong giao tiếp. Lỗi người Việt hay nhầm giữa 아요 và 어요.",
+  "example": "지금 학교에 가요.",
+  "example_romanization": "jigeum hakgyoe gayo.",
+  "example_vn": "Bây giờ tôi đi học.",
+  "example_2": "밥을 맛있게 먹어요.",
+  "example_2_romanization": "babeul masitge meogeoyo.",
+  "example_2_vn": "Tôi ăn cơm ngon lành."
+}"""
+
+_KOREAN_GRAMMAR_SYSTEM_PROMPT = f"""Bạn là chuyên gia NGỮ PHÁP tiếng Hàn (한국어 문법). Trích xuất TẤT CẢ cấu trúc ngữ pháp từ văn bản → mảng JSON chính xác.
+
+MẪU:
+{_KOREAN_GRAMMAR_JSON_TEMPLATE}
+
+LUẬT:
+1. Đủ 13 trường; thiếu → "". example_romanization & example_2_romanization LUÔN phải có, romanization chuẩn (Revised Romanization).
+2. pattern: cấu trúc CHÍNH — LUÔN viết bằng HANGUL gốc, ghi rõ chỗ điền bằng "~" hoặc ký hiệu loại từ (V/A/N). KHÔNG dùng romanization làm pattern (VD viết "~아/어요", không viết "a/eoyo").
+3. romanization: phiên âm phần cấu trúc.
+4. usage: CÔNG THỨC ghép dễ nhớ (VD: "Động từ + 아요/어요").
+5. explanation: TỐI ĐA 2 câu — cách dùng + sắc thái + lỗi người Việt hay mắc + đồng nghĩa (nếu có). Gọn.
+6. VÍ DỤ CÓ HỒN + ĐÚNG CẤP ĐỘ:
+   - Ex1: khẩu ngữ đời thực, cảm xúc thật. Ex2: trang trọng, lịch sự.
+   - Cấp độ ví dụ khớp TOPIK của pattern; KHÔNG nhồi từ khó. Ví dụ 5-12 từ.
+   - MỌI ví dụ PHẢI kèm romanization đầy đủ.
+7. CHÍNH XÁC: ngữ pháp, romanization, cách dùng chuẩn. topic ngắn, đúng trọng tâm.
+8. NHƯ GIẢNG VIÊN ĐỌC GIÁO TRÌNH: Đọc kỹ TOÀN BỘ văn bản, hiểu ngữ cảnh + từ vựng đi kèm rồi mới trích. Ví dụ phải bám ngữ cảnh thực của bài, dùng từ vựng ĐA DẠNG (không lặp cùng 1 cụm từ trong mọi ví dụ).
+9. CÙNG PATTERN – KHÁC NGHĨA: Nếu 1 pattern xuất hiện nhiều lần với từ đi kèm khác nhau tạo NGHĨA/CÁCH DÙNG khác nhau → tạo NHIỀU entry riêng (meaning khác nhau, ví dụ khác nhau) thay vì gộp. Không tạo trùng lặp máy móc nếu thực sự giống nghĩa.
+10. ĐÁNH DẤU PATTERN: Trong example/example_2, BỌC phần thể hiện pattern bằng <b>…</b> để nổi bật trên thẻ (Anki render HTML, ví dụ: "지금 학교에 <b>가요</b>.").
+
+ĐẦU RA: CHỈ mảng JSON thuần, không markdown, không giải thích thừa. Cuối: {{"_comment":"≤15 từ"}}"""
+
 _GRAMMAR_SYSTEM_PROMPTS = {
     "japanese": _JAPANESE_GRAMMAR_SYSTEM_PROMPT,
     "chinese": _CHINESE_GRAMMAR_SYSTEM_PROMPT,
+    "korean": _KOREAN_GRAMMAR_SYSTEM_PROMPT,
 }
 
 _GRAMMAR_JSON_TEMPLATES = {
     "japanese": _JAPANESE_GRAMMAR_JSON_TEMPLATE,
     "chinese": _CHINESE_GRAMMAR_JSON_TEMPLATE,
+    "korean": _KOREAN_GRAMMAR_JSON_TEMPLATE,
 }
 
 

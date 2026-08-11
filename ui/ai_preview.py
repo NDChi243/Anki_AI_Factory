@@ -81,12 +81,20 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
             columns = ["pattern", "pinyin", "meaning", "hsk_level", "topic", "usage",
                        "explanation", "example", "example_pinyin", "example_vn",
                        "example_2", "example_2_pinyin", "example_2_vn"]
+        elif lang == "korean":
+            columns = ["pattern", "romanization", "meaning", "topik_level", "topic", "usage",
+                       "explanation", "example", "example_romanization", "example_vn",
+                       "example_2", "example_2_romanization", "example_2_vn"]
         else:
             columns = ["pattern", "reading", "meaning", "jlptlevel", "topic", "usage",
                        "explanation", "example", "example_vn", "example_2", "example_2_vn"]
     elif lang == "chinese":
         columns = ["simplified", "traditional", "pinyin", "meaning", "sino_vietnamese",
                    "hsk_level", "topic", "example", "example_vn", "example_2", "example_2_vn"]
+    elif lang == "korean":
+        columns = ["front", "romanization", "meaning", "sino_vietnamese",
+                   "topik_level", "topic", "example", "example_romanization", "example_vn",
+                   "example_2", "example_2_romanization", "example_2_vn"]
     else:
         columns = ["front", "furigana", "meaning", "sino-vietnamese",
                    "jlptlevel", "topic", "example", "example_vn", "example_2", "example_2_vn"]

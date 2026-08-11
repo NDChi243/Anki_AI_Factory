@@ -35,16 +35,16 @@ _current_lang = "vi"
 _TRANSLATIONS = {
     # ── App / Menu ──────────────────────────────────────
     "app_title": {
-        "vi": "AnkiTool Multi-Lang V16.0 — Vocabulary Factory",
-        "en": "AnkiTool Multi-Lang V16.0 — Vocabulary Factory",
+        "vi": "AnkiTool Multi-Lang V17.0 — Vocabulary Factory",
+        "en": "AnkiTool Multi-Lang V17.0 — Vocabulary Factory",
     },
     "app_short": {
-        "vi": "AnkiTool Multi-Lang V16",
-        "en": "AnkiTool Multi-Lang V16",
+        "vi": "AnkiTool Multi-Lang V17.0",
+        "en": "AnkiTool Multi-Lang V17.0",
     },
     "menu_entry": {
-        "vi": "🌐 AnkiTool Multi-Lang V16",
-        "en": "🌐 AnkiTool Multi-Lang V16",
+        "vi": "🌐 AnkiTool Multi-Lang V17.0",
+        "en": "🌐 AnkiTool Multi-Lang V17.0",
     },
 
     # ── Language Selector ───────────────────────────────
@@ -55,6 +55,10 @@ _TRANSLATIONS = {
     "lang_chinese": {
         "vi": "🇨🇳 Tiếng Trung",
         "en": "🇨🇳 Chinese",
+    },
+    "lang_korean": {
+        "vi": "🇰🇷 Tiếng Hàn",
+        "en": "🇰🇷 Korean",
     },
 
     # ── Deck & File ─────────────────────────────────────
@@ -241,8 +245,8 @@ _TRANSLATIONS = {
 
     # ── Messages ────────────────────────────────────────
     "msg_import_success": {
-        "vi": "🚀 XUẤT XƯỞNG V16.0 THÀNH CÔNG! [{lang}]\n──────────────────────────────\n✨ Thêm mới   : {added} thẻ\n🔄 Cập nhật  : {updated} thẻ\n🎵 Audio gen  : {audio} file",
-        "en": "🚀 EXPORT V16.0 SUCCESS! [{lang}]\n──────────────────────────────\n✨ New        : {added} cards\n🔄 Updated    : {updated} cards\n🎵 Audio gen  : {audio} files",
+        "vi": "🚀 XUẤT XƯỞNG V17.0 THÀNH CÔNG! [{lang}]\n──────────────────────────────\n✨ Thêm mới   : {added} thẻ\n🔄 Cập nhật  : {updated} thẻ\n🎵 Audio gen  : {audio} file",
+        "en": "🚀 EXPORT V17.0 SUCCESS! [{lang}]\n──────────────────────────────\n✨ New        : {added} cards\n🔄 Updated    : {updated} cards\n🎵 Audio gen  : {audio} files",
     },
     "msg_no_api_key": {
         "vi": "Bạn chưa cấu hình API Key.\n\nNếu dùng DeepSeek/OpenAI/OpenRouter: cần API Key.\nNếu dùng Ollama/LM Studio local: có thể để trống.\n\nMở Cài Đặt AI?",
@@ -291,6 +295,108 @@ _TRANSLATIONS = {
     "err_file_read": {
         "vi": "Lỗi đọc file: {error}",
         "en": "File read error: {error}",
+    },
+
+    # ── Deck Manager ─────────────────────────────────────
+    "deck_manage_btn": {
+        "vi": "🗂️ Quản Lý Deck",
+        "en": "🗂️ Manage Decks",
+    },
+    "deck_refresh_btn": {
+        "vi": "🔄",
+        "en": "🔄",
+    },
+    "deck_manage_title": {
+        "vi": "🗂️ Quản Lý Deck — Parent / Sub",
+        "en": "🗂️ Deck Manager — Parent / Sub",
+    },
+    "deck_manage_desc": {
+        "vi": "Tạo, đổi tên, xóa Parent/Sub Deck ngay trong add-on. Mọi thay đổi được đồng bộ tức thì vào Anki.",
+        "en": "Create, rename, delete Parent/Sub Decks right in the add-on. All changes sync instantly to Anki.",
+    },
+    "deck_col_name": {
+        "vi": "Deck",
+        "en": "Deck",
+    },
+    "deck_col_cards": {
+        "vi": "Thẻ",
+        "en": "Cards",
+    },
+    "deck_add_parent": {
+        "vi": "➕ Tạo Parent",
+        "en": "➕ Add Parent",
+    },
+    "deck_add_sub": {
+        "vi": "📁 Tạo Sub",
+        "en": "📁 Add Sub",
+    },
+    "deck_rename": {
+        "vi": "✏️ Đổi tên",
+        "en": "✏️ Rename",
+    },
+    "deck_delete": {
+        "vi": "🗑 Xóa",
+        "en": "🗑 Delete",
+    },
+    "deck_refresh": {
+        "vi": "🔄 Làm mới",
+        "en": "🔄 Refresh",
+    },
+    "deck_add_parent_title": {
+        "vi": "Tạo Parent Deck",
+        "en": "Add Parent Deck",
+    },
+    "deck_add_parent_prompt": {
+        "vi": "Tên deck cha:",
+        "en": "Parent deck name:",
+    },
+    "deck_add_sub_title": {
+        "vi": "Tạo Sub Deck",
+        "en": "Add Sub Deck",
+    },
+    "deck_add_sub_prompt": {
+        "vi": "Tên sub deck (trong '{parent}'):",
+        "en": "Sub deck name (inside '{parent}'):",
+    },
+    "deck_add_sub_tip": {
+        "vi": "Tạo sub deck bên trong deck đang chọn",
+        "en": "Create a sub deck inside the selected deck",
+    },
+    "deck_rename_title": {
+        "vi": "Đổi Tên Deck",
+        "en": "Rename Deck",
+    },
+    "deck_rename_prompt": {
+        "vi": "Tên mới:",
+        "en": "New name:",
+    },
+    "deck_delete_title": {
+        "vi": "Xóa Deck",
+        "en": "Delete Deck",
+    },
+    "deck_delete_confirm": {
+        "vi": "Xóa deck '{name}' và toàn bộ sub deck + thẻ bên trong?\nHành động này không thể hoàn tác.",
+        "en": "Delete deck '{name}' and all sub decks + cards inside?\nThis action cannot be undone.",
+    },
+    "deck_select_first": {
+        "vi": "⚠️ Chọn một deck trước",
+        "en": "⚠️ Select a deck first",
+    },
+    "deck_created": {
+        "vi": "✅ Đã tạo deck: {name}",
+        "en": "✅ Deck created: {name}",
+    },
+    "deck_renamed": {
+        "vi": "✅ Đã đổi tên: {old} → {new}",
+        "en": "✅ Renamed: {old} → {new}",
+    },
+    "deck_deleted": {
+        "vi": "🗑 Đã xóa deck: {name}",
+        "en": "🗑 Deck deleted: {name}",
+    },
+    "deck_count_parents": {
+        "vi": "✅ {count} deck cha",
+        "en": "✅ {count} parent decks",
     },
 }
 

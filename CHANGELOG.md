@@ -1,5 +1,38 @@
 # 📋 CHANGELOG
 
+## [V17.0] — 2026-08
+
+### ✨ Added
+- **🇰🇷 Ngôn ngữ Hàn Quốc (Korean)**: Ngôn ngữ thứ 3 — từ vựng & ngữ pháp tiếng Hàn với đầy đủ 5 chế độ học (Hàn→Việt, Việt→Hàn, Ghép chữ, Romanization, Ẩn chữ), Note Type riêng, AI prompt trích xuất (Hangul + Romanization chuẩn Revised Romanization), TTS giọng Hàn (ko-KR), bộ lọc cấp độ TOPIK I/II (Language/korean.py, mode/templates.py, mode/css.py, audio/engine.py, utils/ai_extractor.py)
+- **🔤 Romanization cho tiếng Hàn**: Field Romanization + Example Romanization/Example2 Romanization hiển thị trên thẻ, đọc/ghi đầy đủ trong JSON (Language/korean.py, mode/templates.py)
+- **🎓 Bộ lọc TOPIK Level**: level_choices TOPIK I/TOPIK II/1-6 trong bộ lọc cấp độ (Language/korean.py)
+- **🧩 KO_WB_POOL**: Word-Building ghép chữ Hangul cho tiếng Hàn (mode/shared.py)
+
+### 🔧 Changed
+- **Version bump**: Tất cả model names V16.0 → V17.0 (Language/japanese.py, Language/chinese.py)
+- **old_model_names**: Thêm V16.0 vào danh sách migration cho Nhật & Trung
+- **audio/engine.py**: `_MODEL_LANG_MAP` thêm V17.0 + Korean models (ko)
+- **i18n**: Thêm `lang_korean`, cập nhật title/version sang V17.0 (utils/i18n.py)
+- **manifest.json**: version 17.0.0, thêm `korean` vào languages/keywords
+- **AI prompts**: `_PROMPT_VERSION` 2 → 3 (invalidate cache) do thêm Korean prompts (utils/ai_extractor.py)
+
+### 🐛 Fixed
+- N/A
+
+## [V16.1] — 2026-08
+
+### ✨ Added
+- **🎯 Card gộp 5 chế độ (1 từ = 1 card)**: Thay vì 1 từ tạo 5 card riêng (Nhật→Việt, Việt→Nhật, Ghép chữ, Furigana, Ẩn chữ) giờ chỉ tạo **1 card duy nhất** → deck đếm đúng số từ vựng, hết tình trạng số thẻ học nhân 5. Trong card có **thanh chọn chế độ** chuyển đổi bằng JS (mode/), đồng bộ mode qua `pycmd('ai_factory_set_mode:...')`
+- **🎛️ Nút chọn chế độ học ở màn hình Overview**: Patch `Overview._table` (wrap, không ghi đè Onigiri) → chèn bộ chọn mode + nút "Study now" cạnh nút của Onigiri; mode lưu vào `mw.col.conf` (hooks/overview_mode.py)
+- **🔁 Migration tự động 5-card → 1-card**: Model cũ (5 template) khi tái tạo sẽ giữ card mode chính + lịch sử học, xóa 4 card thừa của từng note (__init__.py: `_drop_extra_combo_cards`)
+- **⬇️ Dropdown chọn mode trong Factory**: Thêm chọn chế độ học mặc định trong add-on, đồng bộ với Study now (__init__.py)
+
+### 🔧 Changed
+- **LANG_TEMPLATES**: Mỗi ngôn ngữ chỉ còn 1 cặp template combo (trước đây 5 cặp)
+- **template_names**: "1. Nhật → Việt" → "1. Tổng hợp (5 chế độ)" (Language/*.py)
+- **manifest.json**: `template_count` 5 → 1, thêm `study_modes`
+- **Type answer**: Mode chính (Nhật→Việt) dùng `{{type:Meaning}}` chuẩn Anki; Việt→Nhật & Furigana/Pinyin tự kiểm tra bằng JS (mode/shared.py `_COMBO_MODE_JS`)
+
 ## [V16.0] — 2026-08
 
 ### ✨ Added

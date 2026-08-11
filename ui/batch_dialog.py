@@ -45,7 +45,11 @@ class BatchWordListDialog(QDialog):
 
         # ── Header ──────────────────────────────────────────
         header = QHBoxLayout()
-        lang_label = "🇯🇵 Tiếng Nhật" if self.lang == "japanese" else "🇨🇳 Tiếng Trung"
+        lang_label = {
+            "japanese": "🇯🇵 Tiếng Nhật",
+            "chinese": "🇨🇳 Tiếng Trung",
+            "korean": "🇰🇷 Tiếng Hàn",
+        }.get(self.lang, "🇯🇵 Tiếng Nhật")
         item_label = "Cấu Trúc Ngữ Pháp" if self.grammar else "Từ Vựng"
         header.addWidget(QLabel(
             f"<h3>🚀 Xử Lý Danh Sách {item_label} Lớn ({lang_label})</h3>"

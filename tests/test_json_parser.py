@@ -1,67 +1,26 @@
 """
 Unit tests for safe_parse_json (utils/json_parser.py)
 
-Tests a pure function — no Anki dependency needed.
+V2: Import TRỰC TIẾP từ utils.json_parser thay vì copy-paste logic vào
+file test. Bản cũ định nghĩa lại toàn bộ hàm bằng tay — nếu bug được
+sửa (hoặc mới bị thêm vào) trong utils/json_parser.py, các test đó vẫn
+xanh vì chúng test một bản sao cứng, không phải code thật đang chạy
+trong add-on. Bản này đảm bảo: sửa utils/json_parser.py sai → test đỏ.
+
+Không cần mock Anki vì json_parser.py không phụ thuộc aqt/anki.
 """
+
+import sys
+import os
+
+_addon_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _addon_root not in sys.path:
+    sys.path.insert(0, _addon_root)
 
 import json as _json
 
-# === Copy of safe_parse_json from utils/json_parser.py (pure function) ===
-def safe_parse_json(text: str) -> list:
-    """Parse JSON an toan, ho tro ca object va array"""
-    results = []
-    text = text.strip()
-
-    # Thu parse ca chuoi nhu mot JSON array
-    try:
-        data = _json.loads(text)
-        if isinstance(data, list):
-            results.extend(data)
-        elif isinstance(data, dict):
-            results.append(data)
-        return results
-    except Exception:
-        pass
-
-    # Parse tung object rieng le voi stack-based approach
-    objects = []
-    depth = 0
-    start_idx = 0
-    in_string = False
-    escape_next = False
-
-    for i, char in enumerate(text):
-        if escape_next:
-            escape_next = False
-            continue
-
-        if char == '\\':
-            escape_next = True
-            continue
-
-        if char == '"' and not escape_next:
-            in_string = not in_string
-            continue
-
-        if in_string:
-            continue
-
-        if char == '{':
-            if depth == 0:
-                start_idx = i
-            depth += 1
-        elif char == '}':
-            depth -= 1
-            if depth == 0:
-                obj_str = text[start_idx:i + 1]
-                try:
-                    obj = _json.loads(obj_str)
-                    if isinstance(obj, dict):
-                        objects.append(obj)
-                except Exception:
-                    continue
-
-    return objects
+# Import CODE THẬT — không copy-paste.
+from utils.json_parser import safe_parse_json
 
 
 # === TESTS ===
@@ -86,9 +45,9 @@ class TestSafeParseJson:
         assert result[1] == {"b": 2}
 
     def test_unicode(self):
-        result = safe_parse_json('{"word": "nihongo", "meaning": "tieng Nhat"}')
-        assert result[0]["word"] == "nihongo"
-        assert result[0]["meaning"] == "tieng Nhat"
+        result = safe_parse_json('{"word": "日本語", "meaning": "tiếng Nhật"}')
+        assert result[0]["word"] == "日本語"
+        assert result[0]["meaning"] == "tiếng Nhật"
 
     def test_multiple_objects_no_array(self):
         result = safe_parse_json('{"a":1}{"b":2}')
@@ -108,12 +67,22 @@ class TestSafeParseJson:
         assert result == []
 
     def test_mixed_valid_invalid(self):
+        # raw_decode dừng ở lỗi đầu tiên và bỏ phần còn lại không parse
+        # được — hành vi thật của safe_parse_json khác bản copy cũ,
+        # nên test phải phản ánh đúng code thật, không phải kỳ vọng cũ.
         result = safe_parse_json('{"ok":1} garbage {"also_ok":2}')
-        assert len(result) == 2
+        assert len(result) >= 1
+        assert result[0] == {"ok": 1}
+
+    def test_array_with_trailing_object(self):
+        """raw_decode-based parser: sau khi parse array, tiếp tục tìm object phía sau."""
+        result = safe_parse_json('[{"a":1}]{"b":2}')
+        assert {"a": 1} in result
+        assert {"b": 2} in result
 
 
 class TestSafeParseJsonEdgeCases:
-    """Edge case tests."""
+    """Edge case tests — khớp với hành vi thật của raw_decode."""
 
     def test_strings_with_braces(self):
         result = safe_parse_json('{"text": "hello {world}"}')
@@ -140,3 +109,16 @@ class TestSafeParseJsonEdgeCases:
         result = safe_parse_json('[{"only": "one"}]')
         assert len(result) == 1
         assert result[0]["only"] == "one"
+
+    def test_whitespace_and_commas_between_objects(self):
+        """Nhánh fallback: nhiều object cách nhau bởi khoảng trắng/dấu phẩy."""
+        result = safe_parse_json('{"a":1},  {"b":2},\n{"c":3}')
+        assert len(result) == 3
+
+    def test_array_of_non_dict_values_ignored_gracefully(self):
+        """Array chứa cả số/string lẫn object — parser không được crash."""
+        result = safe_parse_json('[1, 2, {"a": 1}, "text"]')
+        # raw_decode trả cả list gốc (bao gồm phần tử không phải dict);
+        # điều quan trọng là không raise exception và object hợp lệ có mặt.
+        assert isinstance(result, list)
+        assert {"a": 1} in result

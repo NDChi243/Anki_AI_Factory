@@ -3,8 +3,9 @@
 LANG_CONFIG = {
     "label": "🇯🇵 Tiếng Nhật",
     "lang_code": "ja",
-    "model_name": "AnkiTool Japanese V16.0 (Add-on)",
+    "model_name": "AnkiTool Japanese V17.0 (Add-on)",
     "old_model_names": [
+        "AnkiTool Japanese V16.0 (Add-on)",
         "AnkiTool Japanese V15.0 (Add-on)",
         "Mẫu Từ Vựng Tiếng Nhật V14.0 (Add-on)",
     ],
@@ -42,7 +43,7 @@ LANG_CONFIG = {
         ("Example Audio", "Example"),
         ("Example2 Audio", "Example2"),
     ],
-    "template_names": ("1. Nhật → Việt", "2. Việt → Nhật", "3. Ghép chữ", "4. Furigana", "5. 🔤 Ẩn Chữ Cái"),
+    "template_names": ("1. Tổng hợp (5 chế độ)",),
     # Dùng cho report "nghĩa khác" trong UI
     "furi_label": "Furigana",
     "furi_json_key": "furigana",
@@ -54,8 +55,10 @@ LANG_CONFIG = {
 GRAMMAR_CONFIG = {
     "label": "🇯🇵 Ngữ pháp Tiếng Nhật",
     "lang_code": "ja",
-    "model_name": "AnkiTool Japanese Grammar V16.0 (Add-on)",
-    "old_model_names": [],
+    "model_name": "AnkiTool Japanese Grammar V17.0 (Add-on)",
+    "old_model_names": [
+        "AnkiTool Japanese Grammar V16.0 (Add-on)",
+    ],
     "all_fields": [
         "Pattern", "Reading", "Meaning", "JLPT Level", "Topic",
         "Usage", "Explanation",

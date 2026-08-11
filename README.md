@@ -1,8 +1,8 @@
-# 🌐 AnkiTool Multi-Language V15.0
+# 🌐 AnkiTool Multi-Language V17.0
 
-> **Vocabulary Factory cho Anki** — Tạo thẻ từ vựng tiếng Nhật & tiếng Trung với AI, TTS, và interactive templates.
+> **Vocabulary Factory cho Anki** — Tạo thẻ từ vựng tiếng Nhật, Trung & Hàn với AI, TTS, và interactive templates.
 
-[![Version](https://img.shields.io/badge/version-16.0.0-blue)](manifest.json)
+[![Version](https://img.shields.io/badge/version-17.0.0-blue)](manifest.json)
 [![Anki](https://img.shields.io/badge/anki-%3E%3D2.1.50-green)](manifest.json)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-yellow)](manifest.json)
 
@@ -47,7 +47,7 @@ git clone https://github.com/your-username/AnkiTool_Integrated.git
 ```
 
 ### Cấu hình AI
-1. Mở Anki → Tools → **AnkiTool Multi-Lang V15** (Ctrl+Shift+I)
+1. Mở Anki → Tools → **AnkiTool Multi-Lang V17.0** (Ctrl+Shift+I)
 2. Bấm **⚙️ Cài Đặt API**
 3. Nhập API Key từ [DeepSeek](https://platform.deepseek.com/api_keys) hoặc OpenAI
 4. Chọn preset hoặc nhập thủ công Base URL + Model
@@ -106,16 +106,23 @@ AnkiTool_Integrated/
 ├── audio/                # TTS engines (Edge, gTTS, VoiceVox)
 ├── Language/             # Language configs (Japanese, Chinese)
 ├── mode/                 # Card templates, CSS, JS games
-├── ui/                   # UI dialogs (AiChatDialog)
-├── workers/              # Background threads (import, AI, preview)
-├── utils/                # AI extractor, JSON parser, logging, history
-├── tests/                # Unit tests
+├── ui/                   # UI dialogs (AiChatDialog, theme, batch...)
+├── workers/              # Background threads (import, AI, preview, batch)
+├── utils/                # AI extractor, batch processor, JSON parser, logger, i18n, deck cache
+├── hooks/                # Reviewer hooks (speed control, letter gap)
+├── tests/                # 56+ unit tests
+├── .claude/              # 🆕 Hệ thống SKILL cho AI — nguồn kiến thức chính thức
+│   ├── CLAUDE.md         # Memory gốc + index skills (đọc trước)
+│   └── skills/           # 11 skill theo chủ đề (bảo trì/nâng cấp tiết kiệm token)
+├── AGENTS.md             # 🆕 Điểm vào cho mọi AI agent → trỏ tới .claude/
 ├── README.md             # ← File này
-├── CODE_MAP.md           # Bản đồ code cho AI/Vibe coding
-├── UPGRADE_GUIDE.md      # Hướng dẫn nâng cấp & bảo trì
+├── CODE_MAP.md           # ⚠️ Tài liệu CŨ (lỗi thời) — dùng .claude/ thay thế
+├── UPGRADE_GUIDE.md      # ⚠️ Tài liệu CŨ (lỗi thời) — dùng .claude/ thay thế
 ├── REFACTOR_PLAN.md      # Kế hoạch tái cấu trúc
 └── CHANGELOG.md          # Lịch sử phiên bản
 ```
+
+> 💡 **Dành cho AI/Vibe coding**: đọc [`.claude/CLAUDE.md`](.claude/CLAUDE.md) trước → chọn đúng 1 skill → chỉ đọc đúng file/dòng cần sửa (line number có sẵn trong skill). Hệ thống này giúp tiết kiệm token tối đa mà vẫn chính xác.
 
 ---
 

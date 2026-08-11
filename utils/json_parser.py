@@ -20,31 +20,38 @@ def safe_parse_json(text: str) -> list:
     if not text:
         return results
 
+    def _skip_ws(s: str, i: int) -> int:
+        """Bỏ qua whitespace/dấu phẩy để raw_decode không bị lệch vị trí."""
+        n = len(s)
+        while i < n and s[i] in ' \t\n\r,':
+            i += 1
+        return i
+
     # Thử parse cả chuỗi như một JSON array/object
     try:
-        data, _ = _decoder.raw_decode(text)
+        data, end = _decoder.raw_decode(text)
         if isinstance(data, list):
             # Kiểm tra còn object nào sau array không
-            idx = _
+            idx = _skip_ws(text, end)
             while idx < len(text):
                 try:
-                    obj, end = _decoder.raw_decode(text, idx)
+                    obj, end2 = _decoder.raw_decode(text, idx)
                     if isinstance(obj, dict):
                         data.append(obj)
-                    idx = end
+                    idx = _skip_ws(text, end2)
                 except json.JSONDecodeError:
                     break
             results.extend(data)
         elif isinstance(data, dict):
             results.append(data)
             # Kiểm tra còn object nào sau object đầu tiên không
-            idx = _
+            idx = _skip_ws(text, end)
             while idx < len(text):
                 try:
-                    obj, end = _decoder.raw_decode(text, idx)
+                    obj, end2 = _decoder.raw_decode(text, idx)
                     if isinstance(obj, dict):
                         results.append(obj)
-                    idx = end
+                    idx = _skip_ws(text, end2)
                 except json.JSONDecodeError:
                     break
         return results
@@ -55,9 +62,7 @@ def safe_parse_json(text: str) -> list:
     idx = 0
     text_len = len(text)
     while idx < text_len:
-        # Bỏ qua whitespace
-        while idx < text_len and text[idx] in ' \t\n\r,':
-            idx += 1
+        idx = _skip_ws(text, idx)
         if idx >= text_len:
             break
 

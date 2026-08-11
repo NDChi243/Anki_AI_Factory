@@ -83,7 +83,7 @@ def parse_word_list(raw_text: str, lang: str = "japanese") -> List[Dict[str, str
                                 or item.get("word") or item.get("pattern") or ""
                             ).strip(),
                             "meaning": str(item.get("meaning") or "").strip(),
-                            "level": str(item.get("jlptlevel") or item.get("hsk_level") or item.get("level") or "").strip(),
+                            "level": str(item.get("jlptlevel") or item.get("hsk_level") or item.get("topik_level") or item.get("level") or "").strip(),
                             "topic": str(item.get("topic") or "").strip(),
                         })
                     elif isinstance(item, str):
@@ -790,7 +790,11 @@ def _fallback_deck_organization(vocab_list: List[dict], lang: str) -> dict:
     
     # Nhóm theo level trong mỗi topic
     decks = []
-    lang_label = "Tiếng Nhật" if lang == "japanese" else "Tiếng Trung"
+    lang_label = {
+        "japanese": "Tiếng Nhật",
+        "chinese": "Tiếng Trung",
+        "korean": "Tiếng Hàn",
+    }.get(lang, "Tiếng Nhật")
     
     if by_topic:
         sub_decks = []
@@ -799,7 +803,7 @@ def _fallback_deck_organization(vocab_list: List[dict], lang: str) -> dict:
             if len(words) > 50:
                 by_level = {}
                 for w in words:
-                    level = w.get("jlptlevel") or w.get("hsk_level") or "Khác"
+                    level = w.get("jlptlevel") or w.get("hsk_level") or w.get("topik_level") or "Khác"
                     if level not in by_level:
                         by_level[level] = []
                     by_level[level].append(w)
@@ -828,7 +832,7 @@ def _fallback_deck_organization(vocab_list: List[dict], lang: str) -> dict:
         # Nhóm theo level
         by_level = {}
         for w in no_topic:
-            level = w.get("jlptlevel") or w.get("hsk_level") or "Chưa phân loại"
+            level = w.get("jlptlevel") or w.get("hsk_level") or w.get("topik_level") or "Chưa phân loại"
             if level not in by_level:
                 by_level[level] = []
             by_level[level].append(w)
