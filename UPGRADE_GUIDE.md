@@ -17,7 +17,7 @@
 
 ### Prefix cho mọi vibe code session
 ```
-[Context] Đây là Anki add-on Python (AnkiTool_Integrated V15.0).
+[Context] Đây là Anki add-on Python (AI_AutoPushFactory V16.0).
 Cấu trúc: xem CODE_MAP.md.
 Global state: mw (Anki main window), mw.col (collection DB).
 UI framework: PyQt5 (aqt.qt).

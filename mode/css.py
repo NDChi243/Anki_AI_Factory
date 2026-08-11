@@ -152,6 +152,8 @@ _GRAMMAR_EXTRA = '''
 .ch::before{content:'📘';font-size:13px;opacity:.5;margin-right:6px;}
 .cw{border-left:3px solid #34495e;}
 .kanji,.hanzi{font-size:44px;}
+/* Đánh dấu pattern trong câu ví dụ (AI bọc <b>…</b>) */
+.ec .ej b,.ec .ep b{color:var(--accent);font-weight:900;background:var(--accent-soft);border-radius:3px;padding:0 2px;}
 '''
 
 

@@ -18,22 +18,24 @@ logger = get_logger()
 
 def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instruction,
                            lbl_ai_status, get_existing_words_fn,
-                           on_finalize_callback):
+                           on_finalize_callback, grammar=False):
     """
-    Mở dialog xem trước & chỉnh sửa thẻ sau AI extract.
+    Mở dialog xem trước & chỉnh sửa thẻ sau AI extract (từ vựng HOẶC ngữ pháp).
 
     Args:
         parent: Parent widget (AnkiSmartFactory)
-        vocab_list: Mutable list các dict từ vựng
+        vocab_list: Mutable list các dict (từ vựng hoặc ngữ pháp)
         lang: "japanese" hoặc "chinese"
         ai_text_input: QPlainTextEdit chứa text gốc
         ai_instruction: QLineEdit chứa custom instruction
         lbl_ai_status: QLabel hiển thị trạng thái
         get_existing_words_fn: Hàm lấy danh sách từ hiện có
         on_finalize_callback: Callback khi user chấp nhận (nhận final_list)
+        grammar: True nếu đang ở chế độ Ngữ pháp
     """
+    item_label = "Cấu Trúc Ngữ Pháp" if grammar else "Từ Vựng"
     dlg = QDialog(parent)
-    dlg.setWindowTitle(f"🔍 Xem Trước & Chỉnh Sửa — {len(vocab_list)} Từ Vựng")
+    dlg.setWindowTitle(f"🔍 Xem Trước & Chỉnh Sửa — {len(vocab_list)} {item_label}")
     dlg.setMinimumSize(900, 650)
     dlg.resize(1000, 750)
     dlg.setWindowFlags(
@@ -46,7 +48,7 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
     # Header
     header = QHBoxLayout()
     header.addWidget(QLabel(
-        f"<h3>🤖 AI đã trích xuất <span style='color:#e67e22;'>{len(vocab_list)} từ vựng</span></h3>"
+        f"<h3>🤖 AI đã trích xuất <span style='color:#e67e22;'>{len(vocab_list)} {item_label}</span></h3>"
     ))
     header.addStretch()
 
@@ -73,8 +75,16 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
     table.setSelectionMode(QTableWidget.SelectionMode.ExtendedSelection)
     table.setAlternatingRowColors(True)
 
-    # Xác định cột dựa trên ngôn ngữ
-    if lang == "chinese":
+    # Xác định cột dựa trên chế độ (ngữ pháp) + ngôn ngữ
+    if grammar:
+        if lang == "chinese":
+            columns = ["pattern", "pinyin", "meaning", "hsk_level", "topic", "usage",
+                       "explanation", "example", "example_pinyin", "example_vn",
+                       "example_2", "example_2_pinyin", "example_2_vn"]
+        else:
+            columns = ["pattern", "reading", "meaning", "jlptlevel", "topic", "usage",
+                       "explanation", "example", "example_vn", "example_2", "example_2_vn"]
+    elif lang == "chinese":
         columns = ["simplified", "traditional", "pinyin", "meaning", "sino_vietnamese",
                    "hsk_level", "topic", "example", "example_vn", "example_2", "example_2_vn"]
     else:
@@ -118,7 +128,7 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
     btn_regenerate.setStyleSheet("padding:6px 12px;background:#e67e22;color:white;font-weight:bold;border-radius:6px;")
     btn_regenerate.clicked.connect(lambda: _regenerate_selected(
         table, columns, vocab_list, lang, ai_text_input, ai_instruction,
-        get_existing_words_fn, lbl_ai_status, parent
+        get_existing_words_fn, lbl_ai_status, parent, grammar
     ))
     action_bar.addWidget(btn_regenerate)
 
@@ -126,7 +136,7 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
     btn_regenerate_all.setStyleSheet("padding:6px 12px;background:#8e44ad;color:white;font-weight:bold;border-radius:6px;")
     btn_regenerate_all.clicked.connect(lambda: _regenerate_all(
         table, columns, vocab_list, lang, ai_text_input, ai_instruction,
-        get_existing_words_fn, lbl_ai_status, parent, dlg
+        get_existing_words_fn, lbl_ai_status, parent, dlg, grammar
     ))
     action_bar.addWidget(btn_regenerate_all)
 
@@ -170,7 +180,11 @@ def _get_current_vocab_from_table(table, columns):
             table_item = table.item(row, col)
             val = table_item.text().strip() if table_item else ""
             item_data[key] = val
-        front = item_data.get("front") or item_data.get("simplified") or ""
+        # Ngữ pháp lọc theo pattern; từ vựng lọc theo front/simplified
+        if "pattern" in columns:
+            front = item_data.get("pattern") or ""
+        else:
+            front = item_data.get("front") or item_data.get("simplified") or ""
         if front:
             result.append(item_data)
     return result
@@ -245,8 +259,9 @@ def _edit_selected_card(table, columns, vocab_list):
 
 
 def _regenerate_selected(table, columns, vocab_list, lang, ai_text_input,
-                         ai_instruction, get_existing_words_fn, lbl_ai_status, parent):
-    """Tái tạo các thẻ được chọn bằng AI."""
+                         ai_instruction, get_existing_words_fn, lbl_ai_status, parent,
+                         grammar=False):
+    """Tái tạo các thẻ được chọn bằng AI (hỗ trợ cả từ vựng & ngữ pháp)."""
     selected_rows = set()
     for item in table.selectedItems():
         selected_rows.add(item.row())
@@ -261,10 +276,16 @@ def _regenerate_selected(table, columns, vocab_list, lang, ai_text_input,
         return
 
     custom_instr = ai_instruction.text().strip()
-    regen_instr = "CHỈ tái tạo các từ sau đây (giữ nguyên mặt chữ, cải thiện nghĩa + ví dụ):\n"
+    if grammar:
+        regen_instr = "CHỈ tái tạo các CẤU TRÚC NGỮ PHÁP sau (giữ nguyên pattern, cải thiện nghĩa + cách dùng + ví dụ):\n"
+    else:
+        regen_instr = "CHỈ tái tạo các từ sau đây (giữ nguyên mặt chữ, cải thiện nghĩa + ví dụ):\n"
     for row in sorted(selected_rows):
         if row < len(vocab_list):
-            word = vocab_list[row].get("front") or vocab_list[row].get("simplified") or f"#{row+1}"
+            word = (vocab_list[row].get("pattern")
+                    or vocab_list[row].get("front")
+                    or vocab_list[row].get("simplified")
+                    or f"#{row+1}")
             regen_instr += f"- {word}\n"
     if custom_instr:
         regen_instr = custom_instr + "\n" + regen_instr
@@ -272,12 +293,21 @@ def _regenerate_selected(table, columns, vocab_list, lang, ai_text_input,
     existing_words = get_existing_words_fn()
 
     try:
-        vocab_list_new = extract_vocabulary_with_ai(
-            text, lang, regen_instr,
-            existing_words=existing_words,
-            progress_callback=lambda m: lbl_ai_status.setText(m),
-            force_refresh=True,
-        )
+        if grammar:
+            from utils.ai_extractor import extract_grammar_with_ai
+            vocab_list_new = extract_grammar_with_ai(
+                text, lang, regen_instr,
+                existing_patterns=existing_words,
+                progress_callback=lambda m: lbl_ai_status.setText(m),
+                force_refresh=True,
+            )
+        else:
+            vocab_list_new = extract_vocabulary_with_ai(
+                text, lang, regen_instr,
+                existing_words=existing_words,
+                progress_callback=lambda m: lbl_ai_status.setText(m),
+                force_refresh=True,
+            )
 
         if vocab_list_new:
             new_idx = 0
@@ -303,13 +333,15 @@ def _regenerate_selected(table, columns, vocab_list, lang, ai_text_input,
 
 
 def _regenerate_all(table, columns, vocab_list, lang, ai_text_input,
-                    ai_instruction, get_existing_words_fn, lbl_ai_status, parent, dlg):
-    """Tái tạo toàn bộ từ đầu."""
+                    ai_instruction, get_existing_words_fn, lbl_ai_status, parent, dlg,
+                    grammar=False):
+    """Tái tạo toàn bộ từ đầu (hỗ trợ cả từ vựng & ngữ pháp)."""
     from aqt.qt import QMessageBox
+    item_label = "cấu trúc ngữ pháp" if grammar else "từ vựng"
     reply = QMessageBox.question(
         parent,
         "🔁 Xác Nhận Tái Tạo Tất Cả",
-        "Điều này sẽ gọi lại AI để trích xuất lại toàn bộ từ vựng.\n"
+        f"Điều này sẽ gọi lại AI để trích xuất lại toàn bộ {item_label}.\n"
         "Tất cả chỉnh sửa hiện tại sẽ bị mất.\n\n"
         "Bạn có chắc chắn muốn tiếp tục?",
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
@@ -331,12 +363,21 @@ def _regenerate_all(table, columns, vocab_list, lang, ai_text_input,
     QApplication.processEvents()
 
     try:
-        vocab_list_new = extract_vocabulary_long_text(
-            text, lang, custom_instr,
-            existing_words=existing_words,
-            progress_callback=lambda m: lbl_ai_status.setText(m),
-            force_refresh=True,
-        )
+        if grammar:
+            from utils.ai_extractor import extract_grammar_long_text
+            vocab_list_new = extract_grammar_long_text(
+                text, lang, custom_instr,
+                existing_patterns=existing_words,
+                progress_callback=lambda m: lbl_ai_status.setText(m),
+                force_refresh=True,
+            )
+        else:
+            vocab_list_new = extract_vocabulary_long_text(
+                text, lang, custom_instr,
+                existing_words=existing_words,
+                progress_callback=lambda m: lbl_ai_status.setText(m),
+                force_refresh=True,
+            )
 
         if vocab_list_new:
             vocab_list.clear()
@@ -351,10 +392,10 @@ def _regenerate_all(table, columns, vocab_list, lang, ai_text_input,
                     table.setItem(row, col, table_item)
             table.resizeColumnsToContents()
 
-            dlg.setWindowTitle(f"🔍 Xem Trước & Chỉnh Sửa — {len(vocab_list_new)} Từ Vựng")
-            lbl_ai_status.setText(f"✅ Tái tạo: {len(vocab_list_new)} từ vựng!")
+            dlg.setWindowTitle(f"🔍 Xem Trước & Chỉnh Sửa — {len(vocab_list_new)} {item_label.title()}")
+            lbl_ai_status.setText(f"✅ Tái tạo: {len(vocab_list_new)} {item_label}!")
             lbl_ai_status.setStyleSheet("color:#27ae60;font-size:11px;font-weight:bold;")
-            tooltip(f"✅ Đã tái tạo toàn bộ: {len(vocab_list_new)} từ vựng!")
+            tooltip(f"✅ Đã tái tạo toàn bộ: {len(vocab_list_new)} {item_label}!")
         else:
             tooltip("⚠️ AI không trả về kết quả.")
     except Exception as e:
@@ -371,7 +412,10 @@ def _finalize_and_close(dlg, table, columns, vocab_list, on_finalize_callback):
     vocab_list.extend(final_list)
 
     if not final_list:
-        tooltip("⚠️ Không có từ vựng nào sau khi chỉnh sửa.")
+        msg = ("⚠️ Không có cấu trúc ngữ pháp nào sau khi chỉnh sửa."
+               if "pattern" in columns else
+               "⚠️ Không có từ vựng nào sau khi chỉnh sửa.")
+        tooltip(msg)
         return
 
     on_finalize_callback(final_list)

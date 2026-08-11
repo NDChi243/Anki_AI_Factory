@@ -3,6 +3,14 @@
 ## [V16.0] — 2026-08
 
 ### ✨ Added
+- **💾 Lưu trạng thái 2 luồng × 2 ngôn ngữ**: Text + file kẹp của Từ vựng & Ngữ pháp (mỗi ngôn ngữ) được lưu riêng vào factory_state.json, khôi phục khi mở lại Factory — không lẫn nhau, đỡ phải gửi/gọi lại AI. "Xóa Text"/"Bỏ File" sẽ xóa luồng đó (__init__.py)
+- **🔪 Cắt đoạn mịn hơn**: chunk mặc định 12k → **8k ký tự/lần** (config 3k-15k) → chất lượng ví dụ/ngữ pháp cao hơn, vẫn xử lý hết văn bản dài (utils/ai_extractor.py, ui/ai_settings.py)
+- ** Ngữ pháp như giảng viên đọc giáo trình**: Prompt ngữ pháp mới — đọc toàn bộ văn bản để hiểu ngữ cảnh + từ vựng đi kèm, tạo ví dụ đa dạng; CÙNG PATTERN–KHÁC NGHĨA → nhiều thẻ riêng; ĐÁNH DẤU pattern trong ví dụ bằng `<b>…</b>` + CSS màu nổi bật (utils/ai_extractor.py, mode/css.py)
+- **🐛 Fix "Đổ vào xưởng" ở chế độ ngữ pháp**: Dialog Xem Trước giờ hiểu chế độ ngữ pháp (cột Pattern/Usage/Explanation thay vì simplified/traditional), lọc đúng key pattern, tái tạo dùng prompt ngữ pháp; Kiểm Định coi "cùng pattern–khác nghĩa" là thẻ MỚI (ui/ai_preview.py, __init__.py)
+- **📏 Mở rộng nội dung xử lý**: Văn bản dài 50k-100k+ được xử lý HẾT nhờ tự chia đoạn (chunk 8k mặc định, config 3k-15k) → không còn bị cắt. AI Chat cap đọc theo cài đặt (mặc định 45k) (utils/ai_extractor.py, __init__.py, ui/ai_settings.py)
+- **🐛 Fix JSON bị cắt (tràn output)**: DeepSeek giới hạn output ~8192 token/response → chunk quá lớn khiến JSON đứt giữa chừng. Đã: chunk mặc định 8k + cap 15k, tự hạ config cũ (45k→15k) khi đọc, cảnh báo rõ khi output bị cắt, và thông báo lỗi gợi ý giảm độ dài (utils/ai_extractor.py, ui/ai_settings.py)
+- **🧠 Mức độ suy nghĩ (reasoning_effort)**: Bộ chọn Thấp/Trung bình/Cao trong Cài Đặt AI → truyền `reasoning_effort` vào mọi request (trích xuất, ngữ pháp, batch, chat). DeepSeek: chat = nhanh/rẻ, reasoner = sâu/đắt (utils/ai_extractor.py, utils/batch_processor.py, ui/ai_settings.py)
+- **⚡ Tối ưu Token & chất lượng AI**: Chỉ gửi từ vựng/ngữ pháp trùng với nội dung vào prompt (thay vì toàn bộ deck → giảm mạnh input); nén system prompt giữ nguyên chất lượng; hướng dẫn output gọn (explanation ≤2 câu, ví dụ 5-12 từ); tổng hợp token/chi phí theo toàn bộ chunk; tránh trích trùng qua biên giới đoạn (utils/ai_extractor.py, utils/batch_processor.py)
 - **📎 Kẹp file tài liệu tham khảo**: Đính kèm TXT/MD/CSV/PDF/DOCX/XLSX → AI đọc nội dung file làm tài liệu để trích xuất từ vựng/ngữ pháp. Auto-cài python-docx/openpyxl khi thiếu (utils/ai_extractor.py, __init__.py)
 - **📘 Ngữ pháp (Grammar Note Type)**: Chế độ thẻ ngữ pháp riêng cho tiếng Nhật & Trung — Note Type riêng + template 2 chiều (Cấu trúc→Nghĩa, Nghĩa→Cấu trúc) + AI prompt trích xuất pattern/cách dùng/công thức (Language/*.py, mode/templates.py, mode/css.py, utils/ai_extractor.py)
 - **Batch AI Processing**: Xử lý danh sách hàng trăm/nghìn từ qua AI (ui/batch_dialog.py, utils/batch_processor.py, workers/batch_workers.py)

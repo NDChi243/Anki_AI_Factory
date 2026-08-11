@@ -12,7 +12,10 @@
 
 | Tính năng | Mô tả |
 |-----------|-------|
-| 📎 **Kẹp File Tham Khảo** | Đính kèm TXT/MD/CSV/PDF/DOCX/XLSX làm tài liệu → AI đọc nội dung để trích xuất từ vựng/ngữ pháp. (DeepSeek chỉ nhận text → add-on tự trích text tại máy.) |
+| 📏 **Nội dung dài 50k+** | Xử lý toàn bộ văn bản dài (tự chia đoạn ~8k ký tự/lần để chất lượng cao + không tràn token output); không bị cắt, xử lý hết 50k-100k+. |
+| 💾 **Lưu trạng thái 2 luồng** | Text + file kẹp của Từ vựng và Ngữ pháp (mỗi ngôn ngữ) được lưu riêng, khôi phục khi mở lại Factory — không lẫn nhau, đỡ gọi lại AI. |
+| 🧠 **Mức độ suy nghĩ AI** | Bộ chọn Thấp/Trung bình/Cao (reasoning_effort) trong Cài Đặt AI → cân bằng chất lượng vs token. |
+|  **Kẹp File Tham Khảo** | Đính kèm TXT/MD/CSV/PDF/DOCX/XLSX làm tài liệu → AI đọc nội dung để trích xuất từ vựng/ngữ pháp. (DeepSeek chỉ nhận text → add-on tự trích text tại máy.) |
 | 📘 **Ngữ pháp** | Note Type ngữ pháp riêng (Nhật & Trung): thẻ 2 chiều "Cấu trúc→Nghĩa" & "Nghĩa→Cấu trúc", AI trích xuất pattern + công thức + cách dùng + ví dụ. |
 | 🤖 **AI Trích Xuất** | Dùng OpenAI/DeepSeek/Ollama để trích xuất từ vựng từ văn bản. Tự động tránh từ đã có trong deck. |
 | 💬 **AI Chat** | Trợ lý học tập thông minh, hiểu ngữ cảnh Anki của bạn. |

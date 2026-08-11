@@ -21,6 +21,9 @@ _addon_root = os.path.dirname(os.path.abspath(__file__))
 if _addon_root not in sys.path:
     sys.path.insert(0, _addon_root)
 
+# Lưu trạng thái ô AI (text + file kẹp) theo từng luồng: {lang: {vocab|grammar: {...}}}
+_STATE_PATH = os.path.join(_addon_root, "utils", "factory_state.json")
+
 # ═══════════════════════════════════════════════════════════
 #  IMPORTS FROM MODULES (Bridge)
 # ═══════════════════════════════════════════════════════════
@@ -82,8 +85,11 @@ class AnkiSmartFactory(QDialog):
         self._is_grammar = False   # False = từ vựng, True = ngữ pháp
         self.import_worker = None
         self._ai_thread = None
-        # Danh sách file tài liệu tham khảo đã kẹp: [(name, text), ...]
+        # Danh sách file tài liệu tham khảo đã kẹp: [(name, text), ...] + đường dẫn
         self._ai_attached_files = []
+        self._ai_attached_paths = []
+        # Trạng thái lưu theo luồng (từ vựng / ngữ pháp) cho từng ngôn ngữ
+        self._factory_state = self._load_factory_state()
         # Debounce timer cho JSON parsing (tránh parse liên tục khi gõ)
         self._analyze_timer = QTimer(self)
         self._analyze_timer.setSingleShot(True)
@@ -119,9 +125,85 @@ class AnkiSmartFactory(QDialog):
         self.btn_mode_grammar.setChecked(is_grammar)
         if getattr(self, '_is_grammar', False) == is_grammar:
             return
+        # Lưu trạng thái luồng hiện tại TRƯỚC khi đổi mode
+        self._save_current_flow()
         self._is_grammar = is_grammar
         self._on_lang_changed()
         tooltip("📘 Đã chuyển sang Ngữ pháp" if is_grammar else "📖 Đã chuyển sang Từ vựng")
+
+    # ═══════════════════════════════════════════════════════
+    #  LƯU / KHÔI PHỤC TRẠNG THÁI Ô AI (text + file) theo luồng
+    #  {lang: {vocab|grammar: {"text": ..., "files": [paths]}}}
+    # ═══════════════════════════════════════════════════════
+    def _load_factory_state(self):
+        """Đọc trạng thái đã lưu từ file JSON."""
+        try:
+            if os.path.exists(_STATE_PATH):
+                with open(_STATE_PATH, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if isinstance(data, dict):
+                        return data
+        except Exception as e:
+            logger.warning("Lỗi đọc factory_state: %s", e)
+        return {}
+
+    def _save_factory_state(self):
+        """Ghi trạng thái vào file JSON."""
+        try:
+            with open(_STATE_PATH, "w", encoding="utf-8") as f:
+                json.dump(self._factory_state, f, ensure_ascii=False, indent=2)
+        except Exception as e:
+            logger.warning("Lỗi ghi factory_state: %s", e)
+
+    def _flow_key(self):
+        """Trả về (lang, mode) — mode: 'vocab' hoặc 'grammar'."""
+        mode = "grammar" if self._is_grammar else "vocab"
+        return self._current_lang, mode
+
+    def _save_current_flow(self):
+        """Lưu text + file paths của luồng đang hiển thị (gọi TRƯỚC khi đổi ngôn ngữ/mode/đóng)."""
+        try:
+            lang, mode = self._flow_key()
+            flow = self._factory_state.setdefault(lang, {}).setdefault(mode, {})
+            flow["text"] = self.ai_text_input.toPlainText()
+            flow["files"] = list(getattr(self, '_ai_attached_paths', []))
+            self._save_factory_state()
+        except Exception as e:
+            logger.warning("Lỗi lưu flow state: %s", e)
+
+    def _restore_current_flow(self):
+        """Khôi phục text + file kẹp cho luồng đang hiển thị (gọi SAU khi setup UI)."""
+        try:
+            lang, mode = self._flow_key()
+            flow = self._factory_state.get(lang, {}).get(mode, {})
+            self.ai_text_input.setPlainText(flow.get("text", ""))
+            # Khôi phục danh sách file kẹp (đọc lại nếu file còn tồn tại)
+            self._ai_attached_files = []
+            self._ai_attached_paths = []
+            for p in flow.get("files", []):
+                if not os.path.exists(p):
+                    continue
+                try:
+                    from utils.ai_extractor import extract_text_from_file
+                    text = extract_text_from_file(p)
+                    self._ai_attached_files.append((os.path.basename(p), text))
+                    self._ai_attached_paths.append(p)
+                except Exception:
+                    pass
+            self._update_ai_files_label()
+        except Exception as e:
+            logger.warning("Lỗi khôi phục flow state: %s", e)
+
+    def closeEvent(self, event):
+        """Lưu trạng thái ô AI khi đóng Factory."""
+        try:
+            self._save_current_flow()
+        except Exception:
+            pass
+        try:
+            super().closeEvent(event)
+        except Exception:
+            event.accept()
 
     def _setup_ui(self):
         root = QVBoxLayout(self)
@@ -548,6 +630,9 @@ class AnkiSmartFactory(QDialog):
             btn.setStyleSheet(style)
 
     def _select_lang(self, lang_key):
+        if lang_key != self._current_lang:
+            # Lưu trạng thái luồng hiện tại trước khi chuyển ngôn ngữ
+            self._save_current_flow()
         self._current_lang = lang_key
         self._on_lang_changed()
 
@@ -617,6 +702,9 @@ class AnkiSmartFactory(QDialog):
         self.spin_speed.blockSignals(False)
 
         self.get_or_create_model()
+
+        # Khôi phục text + file kẹp cho luồng (ngôn ngữ + mode) đang hiển thị
+        self._restore_current_flow()
 
     def _on_voice_changed(self, index):
         lang = self._cfg()["lang_code"]
@@ -872,6 +960,16 @@ class AnkiSmartFactory(QDialog):
                     action, target_nid = "update", exact_ids[0]
                     cnt["update"] += 1
                 else:
+                    # 📘 Ngữ pháp: cùng pattern + KHÁC nghĩa → thẻ MỚI (biến thể cách dùng)
+                    if getattr(self, '_is_grammar', False):
+                        try:
+                            _gm_existing_meaning = old["Meaning"].strip()
+                        except Exception:
+                            _gm_existing_meaning = ""
+                        if _gm_existing_meaning and meaning and _gm_existing_meaning.lower() != meaning.lower():
+                            cnt["new"] += 1
+                            self._add_to_queue(item, "add", None, [], cnt)
+                            continue
                     # Kiểm tra xem nghĩa có khác không
                     try:
                         existing_meaning = old["Meaning"].strip()
@@ -1220,10 +1318,14 @@ class AnkiSmartFactory(QDialog):
             )
 
     def _ai_clear_text(self):
-        """Xóa text input và reset trạng thái"""
+        """Xóa text input, file kẹp và reset trạng thái (lưu luồng rỗng)"""
         self.ai_text_input.clear()
         self.lbl_ai_status.setText("")
         self.lbl_ai_status.setStyleSheet("color:rgba(234,240,246,0.7);font-size:11px;font-weight:normal;")
+        self._ai_attached_files = []
+        self._ai_attached_paths = []
+        self.lbl_ai_files.setText("")
+        self._save_current_flow()
 
     def _attach_ai_files(self):
         """📎 Đính kèm file tài liệu tham khảo → AI đọc text để trích xuất.
@@ -1244,6 +1346,7 @@ class AnkiSmartFactory(QDialog):
         mw.app.processEvents()
 
         new_files = []
+        ok_paths = []
         combined_parts = []
         errors = []
         for p in paths:
@@ -1257,6 +1360,7 @@ class AnkiSmartFactory(QDialog):
                 errors.append(f"• {name}: không đọc được nội dung")
                 continue
             new_files.append((name, text))
+            ok_paths.append(p)
             combined_parts.append(f"===== 📄 FILE: {name} =====\n{text}")
 
         if not new_files:
@@ -1265,6 +1369,7 @@ class AnkiSmartFactory(QDialog):
             return
 
         self._ai_attached_files.extend(new_files)
+        self._ai_attached_paths.extend(ok_paths)
 
         # Đưa nội dung file vào ô AI để làm tài liệu tham khảo
         combined = "\n\n".join(combined_parts)
@@ -1276,6 +1381,7 @@ class AnkiSmartFactory(QDialog):
 
         self._update_ai_files_label()
         self.lbl_ai_status.setText("")
+        self._save_current_flow()
 
         if errors:
             tooltip(f"📎 Đã kẹp {len(new_files)} file.\n⚠️ Không đọc được:\n" + "\n".join(errors))
@@ -1283,10 +1389,12 @@ class AnkiSmartFactory(QDialog):
             tooltip(f"✅ Đã kẹp {len(new_files)} file làm tài liệu tham khảo!")
 
     def _clear_ai_files(self):
-        """🧹 Bỏ toàn bộ file đã kẹp và xóa nội dung ô AI."""
+        """🧹 Bỏ toàn bộ file đã kẹp và xóa nội dung ô AI (lưu luồng rỗng)."""
         self._ai_attached_files = []
+        self._ai_attached_paths = []
         self.ai_text_input.clear()
         self.lbl_ai_files.setText("")
+        self._save_current_flow()
         tooltip("🧹 Đã bỏ toàn bộ file đính kèm.")
 
     def _update_ai_files_label(self):
@@ -1524,8 +1632,10 @@ class AnkiSmartFactory(QDialog):
             # Cho phép gửi trống — AI sẽ phản hồi dựa trên ngữ cảnh Anki
             full_message = "Xin chào! Hãy phân tích hệ thống Anki của tôi và đưa ra gợi ý học tập."
 
-        # Bảo vệ context DeepSeek: cắt message quá dài (VD kẹp file lớn)
-        _MAX_CHAT_CHARS = 12000
+        # Bảo vệ context: cắt theo max_chars trong Cài Đặt AI (mặc định 45k), không cứng 30k
+        _chat_cfg = get_api_config()
+        _MAX_CHAT_CHARS = int(_chat_cfg.get("max_chars", 45000) or 45000)
+        _MAX_CHAT_CHARS = max(10000, min(45000, _MAX_CHAT_CHARS))
         if len(full_message) > _MAX_CHAT_CHARS:
             tooltip(
                 f"⚠️ Nội dung quá dài ({len(full_message):,} ký tự).\n"
@@ -1734,6 +1844,7 @@ class AnkiSmartFactory(QDialog):
             lbl_ai_status=self.lbl_ai_status,
             get_existing_words_fn=self._get_existing_words_for_ai,
             on_finalize_callback=self._finalize_ai_vocab,
+            grammar=self._is_grammar,
         )
 
     def _finalize_ai_vocab(self, final_list):

@@ -25,6 +25,7 @@ from .ai_extractor import (
     get_api_config, _SYSTEM_PROMPTS, _JSON_TEMPLATES,
     _GRAMMAR_SYSTEM_PROMPTS, _GRAMMAR_JSON_TEMPLATES,
     _make_existing_hash, _parse_ai_json_with_comment,
+    _apply_reasoning_effort,
     get_existing_vocab_from_deck, init_import_history,
 )
 
@@ -268,13 +269,29 @@ Với MỖI từ trong danh sách trên, tạo một object JSON đầy đủ th
 5. Với từ đa nghĩa → thể hiện các nghĩa khác nhau trong 2 ví dụ
 """
     
-    # Thêm existing words context
+    # Thêm existing words context — CHỈ gửi từ trùng với batch này (tối ưu token)
     if existing_words:
-        shown = existing_words[:1500]  # Giới hạn để tiết kiệm token
-        existing_str = ", ".join(shown)
-        prompt += f"\n⚠️ DANH SÁCH TỪ ĐÃ CÓ (TUYỆT ĐỐI KHÔNG XUẤT RA):\n{existing_str}\n"
-        if len(existing_words) > 1500:
-            prompt += f"\n(Còn {len(existing_words) - 1500} từ khác — tổng {len(existing_words)} từ đã có)\n"
+        batch_fronts = [w["front"].lower().strip() for w in words if w.get("front")]
+        _cap = 400
+        overlap = []
+        seen = set()
+        for w in existing_words:
+            key = (w or "").strip().lower()
+            if not key or key in seen:
+                continue
+            seen.add(key)
+            if key in batch_fronts:
+                overlap.append(w.strip())
+        if overlap:
+            if len(overlap) > _cap:
+                shown = overlap[:_cap]
+                note = f"\n(Còn {len(overlap) - _cap} từ khác trùng batch; tổng deck {len(existing_words)} từ)"
+            else:
+                shown = overlap
+                note = f"\n(Tổng deck {len(existing_words)} từ — chỉ liệt kê từ trùng batch này)"
+            prompt += "\n⚠️ TỪ ĐÃ CÓ TRONG DECK — TUYỆT ĐỐI KHÔNG XUẤT RA:\n" + ", ".join(shown) + note + "\n"
+        else:
+            prompt += f"\n⚠️ DECK ĐÃ CÓ {len(existing_words)} TỪ (không trùng batch này) → cứ xử lý bình thường.\n"
     
     if custom_instruction.strip():
         prompt += f"\n📌 YÊU CẦU BỔ SUNG (ưu tiên cao nhất):\n{custom_instruction.strip()}\n"
@@ -318,6 +335,7 @@ def _call_ai_for_batch(
         "temperature": cfg.get("temperature", 0.3),
         "max_tokens": cfg.get("max_tokens", 8192),
     }
+    _apply_reasoning_effort(payload, cfg)
     
     api_base = cfg["api_base"].rstrip("/")
     url = f"{api_base}/chat/completions"
@@ -694,6 +712,7 @@ Tên deck bằng tiếng Việt, ngắn gọn, dễ hiểu.
         "temperature": 0.3,
         "max_tokens": 4096,
     }
+    _apply_reasoning_effort(payload, cfg)
     
     api_base = cfg["api_base"].rstrip("/")
     url = f"{api_base}/chat/completions"

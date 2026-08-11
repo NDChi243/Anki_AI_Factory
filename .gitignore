@@ -6,6 +6,7 @@ utils/ai_config.json
 # === Local Data & Cache ===
 utils/import_history.json
 utils/ai_cache/
+utils/factory_state.json
 
 # === Python ===
 __pycache__/

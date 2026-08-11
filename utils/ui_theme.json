@@ -1,7 +1,7 @@
 {
-  "preset": "midnight",
+  "preset": "glass_dark",
   "accent": "#a78bfa",
-  "glass_alpha": 7,
-  "font_size": 12,
-  "radius": 15
+  "glass_alpha": 4,
+  "font_size": 11,
+  "radius": 8
 }

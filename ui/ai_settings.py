@@ -8,7 +8,7 @@ import urllib.error
 
 from aqt.qt import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel,
-    QLineEdit, QCheckBox, QComboBox, QDoubleSpinBox,
+    QLineEdit, QCheckBox, QComboBox, QDoubleSpinBox, QSpinBox,
     QPushButton, QGroupBox,
 )
 from aqt.utils import showInfo, tooltip
@@ -83,6 +83,42 @@ def show_ai_settings_dialog(parent):
     spin_temp.setValue(cfg.get("temperature", 0.3))
     vl.addWidget(spin_temp)
 
+    # Reasoning effort — mức độ nỗ lực suy nghĩ của model
+    vl.addWidget(QLabel("<b>🧠 Mức độ suy nghĩ (reasoning_effort):</b>"))
+    cbo_effort = QComboBox()
+    effort_options = [
+        ("Tự động (không gửi tham số)", ""),
+        ("Thấp — nhanh, rẻ, ít token", "low"),
+        ("Trung bình", "medium"),
+        ("Cao — sâu, chất lượng tốt, tốn token", "high"),
+    ]
+    for label, val in effort_options:
+        cbo_effort.addItem(label, val)
+    idx_effort = cbo_effort.findData(cfg.get("reasoning_effort", ""))
+    if idx_effort >= 0:
+        cbo_effort.setCurrentIndex(idx_effort)
+    cbo_effort.setToolTip(
+        "Mức độ nỗ lực suy nghĩ của model.\n"
+        "Chỉ áp dụng với model hỗ trợ (OpenAI o1/o3/o4...).\n"
+        "DeepSeek: deepseek-chat = nhanh/rẻ; deepseek-reasoner = suy nghĩ sâu (đắt hơn).\n"
+        "Mức càng cao → chất lượng tốt hơn nhưng tốn NHIỀU token output."
+    )
+    vl.addWidget(cbo_effort)
+
+    # Chunk size — độ dài nội dung mỗi lần gọi (tránh bị cắt)
+    vl.addWidget(QLabel("<b>📏 Độ dài xử lý mỗi lần gọi (ký tự):</b>"))
+    spin_chunk = QSpinBox()
+    spin_chunk.setRange(3000, 15000)
+    spin_chunk.setSingleStep(1000)
+    spin_chunk.setValue(cfg.get("chunk_size", 8000))
+    spin_chunk.setToolTip(
+        "Số ký tự tối đa gửi trong 1 request AI (càng nhỏ càng mịn, chất lượng cao hơn).\n"
+        "Văn bản DÀI HƠN vẫn được xử lý hết (tự chia đoạn) — con số này chỉ là kích thước mỗi lần gọi.\n"
+        "⚠️ ĐỪNG để quá lớn: DeepSeek giới hạn OUTPUT ~8192 token/lần, "
+        "chunk lớn → JSON dễ bị CẮT giữa chừng. Khuyên 6k-8k."
+    )
+    vl.addWidget(spin_chunk)
+
     # Presets
     preset_grp = QGroupBox("⚡ Presets")
     preset_layout = QHBoxLayout()
@@ -152,6 +188,9 @@ def show_ai_settings_dialog(parent):
             txt_base.text().strip(),
             cbo_model.currentText().strip(),
             spin_temp.value(),
+            spin_chunk.value(),          # max_chars (mỗi lần gọi)
+            spin_chunk.value(),          # chunk_size (chia đoạn)
+            cbo_effort.currentData() or "",  # reasoning_effort
         ),
         dlg.accept(),
         tooltip("✅ Đã lưu cấu hình AI!"),

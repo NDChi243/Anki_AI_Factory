@@ -228,23 +228,45 @@ def get_api_config() -> dict:
         "model": "gpt-4o-mini",
         "temperature": 0.3,
         "max_tokens": 8192,
+        # Độ dài nội dung tối đa gửi trong 1 request (ký tự) — DeepSeek 64k context
+        "max_chars": 45000,
+        # Kích thước chunk khi chia văn bản dài (ký tự).
+        # 8k = cắt mịn → chất lượng cao hơn; an toàn với giới hạn OUTPUT ~8192 token.
+        "chunk_size": 8000,
+        # Mức độ nỗ lực suy nghĩ: "" / auto (không gửi), "low", "medium", "high"
+        "reasoning_effort": "",
     }
     cfg = _load_config()
     for k, v in defaults.items():
         cfg.setdefault(k, v)
+    # Sanitize các giá trị đã lưu (VD bản cũ đang để chunk 45k → gây cắt output)
+    try:
+        cfg["max_chars"] = max(10000, min(45000, int(cfg.get("max_chars") or 45000)))
+        cfg["chunk_size"] = max(3000, min(15000, int(cfg.get("chunk_size") or 8000)))
+    except Exception:
+        cfg["max_chars"] = 45000
+        cfg["chunk_size"] = 8000
     # Decrypt API key nếu đã được encrypt
     if cfg.get("api_key") and not cfg["api_key"].startswith("sk-"):
         cfg["api_key"] = _decrypt_api_key(cfg["api_key"])
     return cfg
 
 
-def save_api_config(api_key: str, api_base: str, model: str, temperature: float = 0.3):
+def save_api_config(api_key: str, api_base: str, model: str, temperature: float = 0.3,
+                    max_chars: int = 45000, chunk_size: int = 8000,
+                    reasoning_effort: str = ""):
     # Sanitize input
     api_base = api_base.strip().rstrip("/")
     if api_base and not api_base.startswith(("http://", "https://")):
         api_base = "https://" + api_base
     model = model.strip()
     temperature = max(0.0, min(2.0, temperature))
+    max_chars = max(10000, min(45000, int(max_chars)))
+    # 3k-15k — cắt mịn hơn để chất lượng tốt & không tràn output token (DeepSeek ~8192)
+    chunk_size = max(3000, min(15000, int(chunk_size)))
+    reasoning_effort = (reasoning_effort or "").strip().lower()
+    if reasoning_effort not in ("low", "medium", "high"):
+        reasoning_effort = ""
 
     cfg = {
         "api_key": _encrypt_api_key(api_key.strip()) if api_key.strip() else "",
@@ -252,8 +274,40 @@ def save_api_config(api_key: str, api_base: str, model: str, temperature: float 
         "model": model,
         "temperature": temperature,
         "max_tokens": 8192,
+        "max_chars": max_chars,
+        "chunk_size": chunk_size,
+        "reasoning_effort": reasoning_effort,
     }
     _save_config(cfg)
+
+
+def _apply_reasoning_effort(payload: dict, cfg: dict):
+    """Thêm reasoning_effort vào payload nếu được cấu hình (OpenAI o1/o3/o4, DeepSeek-compatible).
+
+    Mức độ suy nghĩ cao → chất lượng tốt hơn nhưng tốn NHIỀU token output hơn.
+    """
+    effort = (cfg.get("reasoning_effort") or "").strip().lower()
+    if effort in ("low", "medium", "high"):
+        payload["reasoning_effort"] = effort
+    return payload
+
+
+def _check_truncated_output(content: str, progress_callback: Optional[Callable[[str], None]] = None):
+    """Cảnh báo khi output JSON bị cắt (kết thúc không phải ] hoặc }).
+
+    DeepSeek giới hạn output ~8192 token/response → nếu chunk quá lớn,
+    JSON sẽ bị cắt giữa chừng gây lỗi parse.
+    """
+    if not content:
+        return
+    c = content.strip()
+    if c and not (c.endswith("]") or c.endswith("}")):
+        if progress_callback:
+            progress_callback(
+                "⚠️ Kết quả bị CẮT do giới hạn token output (max_tokens).\n"
+                "💡 Giảm 'Độ dài xử lý mỗi lần gọi' trong Cài Đặt AI (VD 6k-10k) "
+                "hoặc chia nhỏ văn bản."
+            )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -298,8 +352,12 @@ def _format_token_report(token_info: dict) -> str:
 # ═══════════════════════════════════════════════════════════
 #  CACHE (AI results)
 # ═══════════════════════════════════════════════════════════
+# Bump version mỗi khi thay đổi prompt/chiến lược → invalidate cache cũ
+_PROMPT_VERSION = 2
+
+
 def _ai_cache_key(text: str, lang: str, instruction: str, existing_hash: str, kind: str = "vocab") -> str:
-    raw = f"{kind}|{lang}|{instruction}|{existing_hash}|{text}"
+    raw = f"{_PROMPT_VERSION}|{kind}|{lang}|{instruction}|{existing_hash}|{text}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
@@ -372,32 +430,23 @@ _CHINESE_JSON_TEMPLATE = """{
   "example_2_vn": "Anh ấy học tập chăm chỉ ở thư viện."
 }"""
 
-_CHINESE_SYSTEM_PROMPT = f"""Bạn là chuyên gia tiếng Trung, trích xuất TẤT CẢ từ vựng từ văn bản và xuất JSON chính xác.
+_CHINESE_SYSTEM_PROMPT = f"""Bạn là chuyên gia tiếng Trung. Trích xuất TẤT CẢ từ vựng từ văn bản → mảng JSON chính xác.
 
+MẪU:
 {_CHINESE_JSON_TEMPLATE}
 
-YÊU CẦU BẮT BUỘC:
-1. JSON đủ 13 trường. Trường nào không có dữ liệu thì để "" — NGOẠI TRỪ example_pinyin và example_2_pinyin: 2 trường này LUÔN LUÔN phải có giá trị, viết pinyin chuẩn có dấu thanh. Nếu thiếu → từ đó KHÔNG hợp lệ.
+LUẬT:
+1. Đủ 13 trường; thiếu → "". example_pinyin & example_2_pinyin LUÔN phải có, pinyin chuẩn có dấu thanh; thiếu → từ không hợp lệ.
+2. VÍ DỤ CÓ HỒN + ĐÚNG CẤP ĐỘ (quan trọng nhất):
+   - Ex1: khẩu ngữ đời thực (cà phê, nhắn tin, than thở, MXH...), cảm xúc thật.
+   - Ex2: trang trọng, lịch sự, formal (công việc, hội họp, thư từ).
+   - Cấp độ ví dụ khớp HSK: HSK1 → câu cực ngắn; HSK2-3 → đơn giản; HSK4 → trung bình; HSK5-6 → phức tạp, thành ngữ. TUYỆT ĐỐI không nhồi từ khó vào từ cấp thấp.
+   - TRÁNH câu SGK vô hồn ("我是学生"). Từ đa nghĩa → 2 nghĩa khác nhau ở 2 ví dụ. Ví dụ ngắn gọn, 5-12 từ.
+3. CHỐNG TRÙNG: bỏ qua mọi từ trong "TỪ ĐÃ CÓ".
+4. CHÍNH XÁC: pinyin, ngữ pháp, từ vựng chuẩn. topic ngắn, đúng HSK.
+5. Xuất theo thứ tự xuất hiện trong văn bản.
 
-2. VÍ DỤ PHẢI CÓ HỒN + ĐÚNG CẤP ĐỘ (quan trọng nhất):
-   - Example 1: KHẨU NGỮ tự nhiên, gắn tình huống đời thực (cà phê, nhắn tin, than thở, mạng xã hội, cãi nhau nhẹ...). Phải có cảm xúc thật (vui, bực, tiếc, mỉa mai, ngại ngùng).
-   - Example 2: TRANG TRỌNG, lịch sự, phù hợp ngữ cảnh formal (công việc, hội họp, thư từ).
-   - CẤP ĐỘ TỪ VỰNG & NGỮ PHÁP TRONG VÍ DỤ PHẢI KHỚP VỚI HSK CỦA TỪ: HSK1 → câu cực ngắn, chỉ dùng từ HSK1-2. HSK2-3 → câu đơn giản. HSK4 → câu trung bình. HSK5-6 → câu phức tạp, có thành ngữ. TUYỆT ĐỐI KHÔNG nhồi từ khó/ngữ pháp cao cấp vào ví dụ của từ HSK thấp — người học sẽ không hiểu được.
-   - TUYỆT ĐỐI TRÁNH câu sách giáo khoa vô hồn kiểu "我是学生" / "你好吗？我很好" — không ai nói vậy ngoài đời.
-   - Nếu từ có nhiều nghĩa/cách dùng → thể hiện nghĩa khác nhau trong 2 ví dụ.
-   - Độ dài vừa phải, tự nhiên, đúng trọng tâm ngữ cảnh của từ.
-
-3. CHỐNG TRÙNG: Không xuất từ đã có trong danh sách "TỪ ĐÃ CÓ" (cả mặt chữ lẫn nghĩa).
-
-4. CHÍNH XÁC: Pinyin, ngữ pháp, từ vựng chuẩn tuyệt đối.
-
-5. CHỦ ĐỀ (topic): Nhất quán, đúng cấp độ HSK của từ.
-
-6. TỰ ĐỀ XUẤT: Thêm từ liên quan trong bài nếu thấy thiếu.
-
-7. THỨ TỰ: Xuất theo đúng thứ tự xuất hiện trong văn bản gốc.
-
-ĐẦU RA: Mảng JSON thuần [{{...}}]. Không markdown. Cuối cùng: {{"_comment":"lời bình"}}"""
+ĐẦU RA: CHỈ mảng JSON thuần, không markdown, không giải thích thừa. Cuối: {{"_comment":"≤15 từ"}}"""
 
 _JAPANESE_JSON_TEMPLATE = """{
   "front": "食べる",
@@ -412,32 +461,23 @@ _JAPANESE_JSON_TEMPLATE = """{
   "example_2_vn": "Tôi đã dùng bữa tối cùng với quý khách."
 }"""
 
-_JAPANESE_SYSTEM_PROMPT = f"""Bạn là chuyên gia tiếng Nhật, trích xuất TẤT CẢ từ vựng từ văn bản và xuất JSON chính xác.
+_JAPANESE_SYSTEM_PROMPT = f"""Bạn là chuyên gia tiếng Nhật. Trích xuất TẤT CẢ từ vựng từ văn bản → mảng JSON chính xác.
 
+MẪU:
 {_JAPANESE_JSON_TEMPLATE}
 
-YÊU CẦU BẮT BUỘC:
-1. JSON đủ 10 trường, thiếu dữ liệu → "".
+LUẬT:
+1. Đủ 10 trường; thiếu → "".
+2. VÍ DỤ CÓ HỒN + ĐÚNG CẤP ĐỘ (quan trọng nhất):
+   - Ex1: khẩu ngữ đời thực (quán cà phê, LINE, than thở, MXH...), cảm xúc thật, trợ từ cuối câu tự nhiên (よ/ね/よね/じゃん).
+   - Ex2: trang trọng, lịch sự (です・ます/敬語).
+   - Cấp độ ví dụ khớp JLPT: N5 → câu cực ngắn; N4 → đơn giản; N3 → trung bình; N2-N1 → phức tạp, thành ngữ. TUYỆT ĐỐI không nhồi từ khó vào từ cấp thấp.
+   - TRÁNH câu SGK vô hồn. Từ đa nghĩa → 2 nghĩa khác nhau ở 2 ví dụ. Ví dụ ngắn gọn, 5-12 từ.
+3. CHỐNG TRÙNG: bỏ qua mọi từ trong "TỪ ĐÃ CÓ".
+4. CHÍNH XÁC: furigana, ngữ pháp, từ vựng chuẩn. topic ngắn, đúng JLPT.
+5. Xuất theo thứ tự xuất hiện trong văn bản.
 
-2. VÍ DỤ PHẢI CÓ HỒN + ĐÚNG CẤP ĐỘ (quan trọng nhất):
-   - Example 1: KHẨU NGỮ tự nhiên (普通体), gắn tình huống đời thực (quán cà phê, LINE, than thở, mạng xã hội, cãi nhau nhẹ...). Có cảm xúc thật (vui, bực, tiếc, mỉa mai, ngại ngùng). Dùng trợ từ cuối câu tự nhiên (よ、ね、よね、じゃん...).
-   - Example 2: TRANG TRỌNG, lịch sự (です・ます体 hoặc 敬語 nếu phù hợp).
-   - CẤP ĐỘ TỪ VỰNG & NGỮ PHÁP TRONG VÍ DỤ PHẢI KHỚP VỚI JLPT CỦA TỪ: N5 → câu cực ngắn, chỉ dùng từ/ngữ pháp N5. N4 → câu đơn giản. N3 → câu trung bình. N2-N1 → câu phức tạp, thành ngữ. TUYỆT ĐỐI KHÔNG nhồi từ khó/ngữ pháp cao cấp vào ví dụ của từ JLPT thấp — người học sẽ không hiểu được.
-   - TUYỆT ĐỐI TRÁNH câu sách giáo khoa vô hồn — không ai nói vậy ngoài đời.
-   - Nếu từ có nhiều nghĩa/cách dùng → thể hiện nghĩa khác nhau trong 2 ví dụ.
-   - Độ dài vừa phải, tự nhiên, đúng trọng tâm ngữ cảnh của từ.
-
-3. CHỐNG TRÙNG: Không xuất từ đã có trong danh sách "TỪ ĐÃ CÓ" (cả mặt chữ lẫn nghĩa).
-
-4. CHÍNH XÁC: Furigana, ngữ pháp, từ vựng chuẩn tuyệt đối.
-
-5. CHỦ ĐỀ (topic): Nhất quán, đúng cấp độ JLPT của từ.
-
-6. TỰ ĐỀ XUẤT: Thêm từ liên quan trong bài nếu thấy thiếu.
-
-7. THỨ TỰ: Xuất theo đúng thứ tự xuất hiện trong văn bản gốc.
-
-ĐẦU RA: Mảng JSON thuần [{{...}}]. Không markdown. Cuối cùng: {{"_comment":"lời bình"}}"""
+ĐẦU RA: CHỈ mảng JSON thuần, không markdown, không giải thích thừa. Cuối: {{"_comment":"≤15 từ"}}"""
 
 _SYSTEM_PROMPTS = {
     "japanese": _JAPANESE_SYSTEM_PROMPT,
@@ -472,25 +512,27 @@ _JAPANESE_GRAMMAR_JSON_TEMPLATE = """{
   "example_2_vn": "Mai nghỉ cũng được nhé."
 }"""
 
-_JAPANESE_GRAMMAR_SYSTEM_PROMPT = f"""Bạn là chuyên gia NGỮ PHÁP tiếng Nhật (文法), trích xuất TẤT CẢ cấu trúc ngữ pháp từ văn bản và xuất JSON chính xác.
+_JAPANESE_GRAMMAR_SYSTEM_PROMPT = f"""Bạn là chuyên gia NGỮ PHÁP tiếng Nhật (文法). Trích xuất TẤT CẢ cấu trúc ngữ pháp từ văn bản → mảng JSON chính xác.
 
-MẪU JSON:
+MẪU:
 {_JAPANESE_GRAMMAR_JSON_TEMPLATE}
 
-YÊU CẦU BẮT BUỘC:
-1. JSON đủ 11 trường. Trường nào không có dữ liệu → "".
-2. pattern: cấu trúc ngữ pháp CHÍNH (VD: 〜てもいい, 〜そうです, 〜ことにする, 〜ばいい). Ghi rõ chỗ điền bằng "〜" hoặc ký hiệu loại từ (V/イA/ナA/N) để người học biết cách ghép.
-3. reading: cách đọc của pattern nếu là từ/trợ từ cụ thể (VD: てもいい). Bỏ trống nếu là cấu trúc có biến tố.
-4. usage: CÔNG THỨC ghép cụ thể, dễ nhớ (VD: "Vて + もいいです", "Aい + そうです").
-5. explanation: giải thích NGẮN GỌN cách dùng + sắc thái (thân mật/lịch sự) + lỗi người Việt hay mắc + cấu trúc đồng nghĩa/trái nghĩa. 1-3 câu, súc tích.
-6. VÍ DỤ PHẢI CÓ HỒN + ĐÚNG CẤP ĐỘ:
-   - Example 1: KHẨU NGỮ tự nhiên (普通体), tình huống đời thực (quán cà phê, LINE, than thở...). Có cảm xúc thật, trợ từ cuối câu tự nhiên (よ、ね、よね).
-   - Example 2: TRANG TRỌNG, lịch sự (です・ます体 hoặc 敬語 nếu phù hợp).
-   - CẤP ĐỘ TỪ VỰNG & NGỮ PHÁP TRONG VÍ DỤ PHẢI KHỚP JLPT CỦA PATTERN. TUYỆT ĐỐI KHÔNG nhồi từ khó.
-7. CHÍNH XÁC: ngữ pháp, cách dùng, từ vựng chuẩn tuyệt đối.
-8. CHỦ ĐỀ (topic): ngắn gọn, đúng trọng tâm (VD: "Cho phép / Xin phép", "Điều kiện", "Nguyện vọng", "Suy đoán"...).
+LUẬT:
+1. Đủ 11 trường; thiếu → "".
+2. pattern: cấu trúc CHÍNH — LUÔN viết bằng CHỮ GỐC (kanji + kana), ghi rõ chỗ điền bằng "〜" hoặc ký hiệu loại từ (V/イA/ナA/N). KHÔNG dùng romaji (VD viết "〜てもいい", không viết "te mo ii").
+3. reading: cách đọc nếu là từ/trợ từ cụ thể; bỏ trống nếu cấu trúc có biến tố.
+4. usage: CÔNG THỨC ghép dễ nhớ (VD: "Vて + もいいです").
+5. explanation: TỐI ĐA 2 câu — cách dùng + sắc thái + lỗi người Việt hay mắc + đồng nghĩa/trái nghĩa (nếu có). Gọn, không lan man.
+6. VÍ DỤ CÓ HỒN + ĐÚNG CẤP ĐỘ:
+   - Ex1: khẩu ngữ đời thực (普通体), cảm xúc thật, trợ từ よ/ね/よね.
+   - Ex2: trang trọng, lịch sự (です・ます/敬語).
+   - Cấp độ ví dụ khớp JLPT của pattern; KHÔNG nhồi từ khó. Ví dụ 5-12 từ.
+7. CHÍNH XÁC: ngữ pháp, cách dùng, từ vựng chuẩn. topic ngắn, đúng trọng tâm.
+8. NHƯ GIẢNG VIÊN ĐỌC GIÁO TRÌNH: Đọc kỹ TOÀN BỘ văn bản, hiểu ngữ cảnh + từ vựng đi kèm rồi mới trích. Ví dụ phải bám ngữ cảnh thực của bài, dùng từ vựng ĐA DẠNG (không lặp cùng 1 cụm từ trong mọi ví dụ).
+9. CÙNG PATTERN – KHÁC NGHĨA: Nếu 1 pattern xuất hiện nhiều lần với từ đi kèm khác nhau tạo NGHĨA/CÁCH DÙNG khác nhau → tạo NHIỀU entry riêng (meaning khác nhau, ví dụ khác nhau) thay vì gộp. Không tạo trùng lặp máy móc nếu thực sự giống nghĩa.
+10. ĐÁNH DẤU PATTERN: Trong example/example_2, BỌC phần thể hiện pattern bằng <b>…</b> để nổi bật trên thẻ (Anki render HTML, ví dụ: "ここで写真を撮<b>ってもいい</b>ですか。").
 
-ĐẦU RA: Mảng JSON thuần [{{...}}]. Không markdown. Cuối cùng: {{"_comment":"lời bình"}}"""
+ĐẦU RA: CHỈ mảng JSON thuần, không markdown, không giải thích thừa. Cuối: {{"_comment":"≤15 từ"}}"""
 
 _CHINESE_GRAMMAR_JSON_TEMPLATE = """{
   "pattern": "把 + N + V",
@@ -508,26 +550,27 @@ _CHINESE_GRAMMAR_JSON_TEMPLATE = """{
   "example_2_vn": "Làm ơn đóng cửa lại."
 }"""
 
-_CHINESE_GRAMMAR_SYSTEM_PROMPT = f"""Bạn là chuyên gia NGỮ PHÁP tiếng Trung (语法), trích xuất TẤT CẢ cấu trúc ngữ pháp từ văn bản và xuất JSON chính xác.
+_CHINESE_GRAMMAR_SYSTEM_PROMPT = f"""Bạn là chuyên gia NGỮ PHÁP tiếng Trung (语法). Trích xuất TẤT CẢ cấu trúc ngữ pháp từ văn bản → mảng JSON chính xác.
 
-MẪU JSON:
+MẪU:
 {_CHINESE_GRAMMAR_JSON_TEMPLATE}
 
-YÊU CẦU BẮT BUỘC:
-1. JSON đủ 13 trường. Trường nào không có dữ liệu → "" — NGOẠI TRỪ example_pinyin và example_2_pinyin: 2 trường này LUÔN LUÔN phải có giá trị, pinyin chuẩn có dấu thanh.
-2. pattern: cấu trúc ngữ pháp CHÍNH (VD: 把字句, 是...的, 越来越..., 不但...而且...). Ghi rõ chỗ điền bằng ký hiệu loại từ (N/V/Adj) để biết cách ghép.
-3. pinyin: phiên âm của pattern (chỉ phần cấu trúc).
-4. usage: CÔNG THỨC ghép cụ thể, dễ nhớ (VD: "Chủ ngữ + 把 + 宾语 + V + 结果").
-5. explanation: giải thích NGẮN GỌN cách dùng + sắc thái + lỗi người Việt hay mắc + cấu trúc đồng nghĩa. 1-3 câu.
-6. VÍ DỤ PHẢI CÓ HỒN + ĐÚNG CẤP ĐỘ:
-   - Example 1: KHẨU NGỮ tự nhiên, tình huống đời thực (quán cà phê, nhắn tin, mạng xã hội). Có cảm xúc thật.
-   - Example 2: TRANG TRỌNG, lịch sự, phù hợp ngữ cảnh formal.
-   - CẤP ĐỘ TỪ VỰNG & NGỮ PHÁP TRONG VÍ DỤ PHẢI KHỚP HSK CỦA PATTERN. TUYỆT ĐỐI KHÔNG nhồi từ khó.
+LUẬT:
+1. Đủ 13 trường; thiếu → "". example_pinyin & example_2_pinyin LUÔN phải có, pinyin chuẩn có dấu thanh.
+2. pattern: cấu trúc CHÍNH — LUÔN viết bằng HÁN TỰ gốc, ghi rõ chỗ điền bằng ký hiệu loại từ (N/V/Adj). KHÔNG viết pattern bằng pinyin (VD viết "把字句", không viết "bǎ zì jù").
+3. pinyin: phiên âm phần cấu trúc.
+4. usage: CÔNG THỨC ghép dễ nhớ (VD: "Chủ ngữ + 把 + 宾语 + V + 结果").
+5. explanation: TỐI ĐA 2 câu — cách dùng + sắc thái + lỗi người Việt hay mắc + đồng nghĩa (nếu có). Gọn.
+6. VÍ DỤ CÓ HỒN + ĐÚNG CẤP ĐỘ:
+   - Ex1: khẩu ngữ đời thực, cảm xúc thật. Ex2: trang trọng, formal.
+   - Cấp độ ví dụ khớp HSK của pattern; KHÔNG nhồi từ khó. Ví dụ 5-12 từ.
    - MỌI ví dụ PHẢI kèm pinyin đầy đủ, có dấu thanh.
-7. CHÍNH XÁC: ngữ pháp, pinyin, cách dùng chuẩn tuyệt đối.
-8. CHỦ ĐỀ (topic): ngắn gọn, đúng trọng tâm (VD: "Cấu trúc câu", "So sánh", "Điều kiện", "Liên từ"...).
+7. CHÍNH XÁC: ngữ pháp, pinyin, cách dùng chuẩn. topic ngắn, đúng trọng tâm.
+8. NHƯ GIẢNG VIÊN ĐỌC GIÁO TRÌNH: Đọc kỹ TOÀN BỘ văn bản, hiểu ngữ cảnh + từ vựng đi kèm rồi mới trích. Ví dụ phải bám ngữ cảnh thực của bài, dùng từ vựng ĐA DẠNG (không lặp cùng 1 cụm từ trong mọi ví dụ).
+9. CÙNG PATTERN – KHÁC NGHĨA: Nếu 1 pattern xuất hiện nhiều lần với từ đi kèm khác nhau tạo NGHĨA/CÁCH DÙNG khác nhau → tạo NHIỀU entry riêng (meaning khác nhau, ví dụ khác nhau) thay vì gộp. Không tạo trùng lặp máy móc nếu thực sự giống nghĩa.
+10. ĐÁNH DẤU PATTERN: Trong example/example_2, BỌC phần thể hiện pattern bằng <b>…</b> để nổi bật trên thẻ (Anki render HTML, ví dụ: "我把作业做<b>完了</b>。").
 
-ĐẦU RA: Mảng JSON thuần [{{...}}]. Không markdown. Cuối cùng: {{"_comment":"lời bình"}}"""
+ĐẦU RA: CHỈ mảng JSON thuần, không markdown, không giải thích thừa. Cuối: {{"_comment":"≤15 từ"}}"""
 
 _GRAMMAR_SYSTEM_PROMPTS = {
     "japanese": _JAPANESE_GRAMMAR_SYSTEM_PROMPT,
@@ -751,6 +794,53 @@ def _extract_docx_text(filepath: str) -> str:
 #  AI API CALL (cache + existing_words context)
 # ═══════════════════════════════════════════════════════════
 
+# Số mục tối đa đưa vào prompt (giới hạn token input)
+_MAX_EXISTING_SHOWN = 400
+
+
+def _format_existing_context(existing: List[str], text: str, label: str = "TỪ") -> str:
+    """Tạo chuỗi 'mục đã có' GỌN cho prompt — tối ưu token input.
+
+    Chỉ liệt kê các mục THỰC SỰ xuất hiện trong nội dung đang xử lý
+    (khả năng AI trùng cao nhất), không gửi toàn bộ deck hàng nghìn từ.
+    Không có mục trùng → chỉ báo tổng số, AI cứ trích xuất bình thường.
+    """
+    if not existing:
+        return ""
+    text_lower = text.lower()
+    overlap = []
+    seen = set()
+    for w in existing:
+        w = (w or "").strip()
+        if not w:
+            continue
+        key = w.lower()
+        if key in seen:
+            continue
+        seen.add(key)
+        if key in text_lower:
+            overlap.append(w)
+
+    if not overlap:
+        return (
+            f"\n\n⚠️ DECK ĐÃ CÓ {len(existing)} {label} (KHÔNG CÓ MỤC NÀO TRÙNG "
+            f"với nội dung trên) → cứ trích xuất bình thường, không cần lo trùng."
+        )
+
+    if len(overlap) > _MAX_EXISTING_SHOWN:
+        shown = overlap[:_MAX_EXISTING_SHOWN]
+        note = f"\n(Còn {len(overlap) - _MAX_EXISTING_SHOWN} mục khác trùng nội dung; tổng deck {len(existing)} mục)"
+    else:
+        shown = overlap
+        note = f"\n(Tổng deck {len(existing)} mục — chỉ liệt kê mục trùng với nội dung)"
+
+    return (
+        f"\n\n⚠️ {label} ĐÃ CÓ TRONG DECK — TUYỆT ĐỐI KHÔNG XUẤT RA:\n"
+        + ", ".join(shown)
+        + note
+    )
+
+
 def extract_vocabulary_with_ai(
     text: str,
     lang: str,
@@ -758,6 +848,7 @@ def extract_vocabulary_with_ai(
     existing_words: Optional[List[str]] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
     force_refresh: bool = False,
+    token_callback: Optional[Callable[[dict], None]] = None,
 ) -> list:
     """
     Gửi văn bản đến AI API để trích xuất từ vựng. Cache thông minh.
@@ -789,8 +880,8 @@ def extract_vocabulary_with_ai(
 
     system_prompt = _SYSTEM_PROMPTS.get(lang, _JAPANESE_SYSTEM_PROMPT)
 
-    # Giới hạn text
-    max_chars = 12000
+    # Giới hạn text — có thể cấu hình (mặc định 45k ký tự, DeepSeek 64k context)
+    max_chars = cfg.get("max_chars", 45000)
     if len(text) > max_chars:
         if progress_callback:
             progress_callback(f"📝 Văn bản {len(text)} ký tự → cắt còn {max_chars}")
@@ -799,19 +890,11 @@ def extract_vocabulary_with_ai(
     if progress_callback:
         progress_callback(f"🤖 Đang gọi {cfg['model']}...")
 
-    # User message: text + existing words list
+    # User message: text + existing words context (đã lọc gọn để tiết kiệm token)
     user_msg = f"Hãy trích xuất tất cả từ vựng từ văn bản sau:\n\n{text}"
 
     if existing_words and len(existing_words) > 0:
-        # Giới hạn số lượng từ hiện có để tiết kiệm token (tối đa 2000 từ)
-        shown_words = existing_words[:2000]
-        words_str = ", ".join(shown_words)
-        user_msg += (
-            f"\n\n⚠️ DANH SÁCH TỪ ĐÃ CÓ TRONG DECK (TUYỆT ĐỐI KHÔNG XUẤT RA):\n"
-            f"{words_str}\n"
-        )
-        if len(existing_words) > 2000:
-            user_msg += f"\n(Còn {len(existing_words) - 2000} từ khác — tổng {len(existing_words)} từ đã có)"
+        user_msg += _format_existing_context(existing_words, text, label="TỪ")
 
     if custom_instruction.strip():
         user_msg += f"\n\nYÊU CẦU BỔ SUNG (ưu tiên cao nhất):\n{custom_instruction.strip()}"
@@ -827,6 +910,7 @@ def extract_vocabulary_with_ai(
         "temperature": cfg.get("temperature", 0.3),
         "max_tokens": cfg.get("max_tokens", 8192),
     }
+    _apply_reasoning_effort(payload, cfg)
 
     api_base = cfg["api_base"].rstrip("/")
     url = f"{api_base}/chat/completions"
@@ -855,6 +939,11 @@ def extract_vocabulary_with_ai(
             usage.get("prompt_tokens", 0),
             usage.get("completion_tokens", 0),
         )
+        if token_callback:
+            try:
+                token_callback(token_info)
+            except Exception:
+                pass
 
     msg = result["choices"][0]["message"]
     content = msg.get("content", "") or ""
@@ -872,6 +961,7 @@ def extract_vocabulary_with_ai(
     if progress_callback:
         progress_callback("🔍 Đang parse JSON...")
 
+    _check_truncated_output(content, progress_callback)
     vocab_list, comment = _parse_ai_json_with_comment(content)
 
     # Lọc bỏ từ trùng với existing_words (safety net)
@@ -947,7 +1037,13 @@ def _parse_ai_json_with_comment(content: str) -> tuple:
     if results:
         return results, comment
 
-    raise RuntimeError(f"⚠️ Không parse được JSON.\n{content[:500]}")
+    raise RuntimeError(
+        "⚠️ Không parse được JSON — thường do KẾT QUẢ BỊ CẮT vì vượt giới hạn "
+        "token output (DeepSeek ~8192/response).\n"
+        "💡 Cách khắc phục: Vào Cài Đặt AI → giảm 'Độ dài xử lý mỗi lần gọi' "
+        "xuống 8k-12k, rồi thử lại. Văn bản dài vẫn được xử lý hết (tự chia đoạn).\n"
+        f"Nội dung nhận được:\n{content[:400]}"
+    )
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1103,11 +1199,13 @@ NGUYÊN TẮC VÀNG KHI TẠO VÍ DỤ:
 📍 Ngữ cảnh: [tình huống cụ thể]
 💬 Sắc thái: [thân mật/lịch sự/trang trọng + lưu ý nếu dùng sai]
 ⚠ Với tiếng Trung: MỌI câu ví dụ trong chat PHẢI kèm pinyin bên dưới. Không có ngoại lệ.
+⚠ CẤU TRÚC NGỮ PHÁP LUÔN viết NGUYÊN CHỮ: tiếng Nhật dùng kanji + kana (VD 〜てもいい、〜ばいい、〜そうだ), tiếng Trung dùng Hán tự (VD 把字句、是...的、越来越). TUYỆT ĐỐI KHÔNG viết cấu trúc bằng Pinyin (bǎ...) hay Romaji. Pinyin/Furigana chỉ là dòng phụ chú CÁCH ĐỌC bên dưới, không thay thế chữ gốc.
 
 ANKI INTEGRATION:
 - Dùng dữ liệu ngữ cảnh bên dưới để phân tích và đề xuất.
 - Khi đề xuất từ vựng mới: CHỈ từ chưa có, kèm JSON block (```json...```) ở cuối để import 1-click.
 - Format JSON đúng mẫu: Japanese {front,furigana,meaning,sino-vietnamese,jlptlevel,topic,example,example_vn,example_2,example_2_vn} | Chinese {simplified,traditional,pinyin,meaning,sino_vietnamese,hsk_level,topic,example,example_pinyin,example_vn,example_2,example_2_pinyin,example_2_vn}.
+- Khi đề xuất NGỮ PHÁP: dùng mẫu Japanese Grammar {pattern,reading,meaning,jlptlevel,topic,usage,explanation,example,example_vn,example_2,example_2_vn} | Chinese Grammar {pattern,pinyin,meaning,hsk_level,topic,usage,explanation,example,example_pinyin,example_vn,example_2,example_2_pinyin,example_2_vn}. Trường pattern LUÔN là CHỮ GỐC (kanji/hanzi), không phải pinyin/romaji.
 - BẮT BUỘC với tiếng Trung: MỌI từ phải có example_pinyin và example_2_pinyin — KHÔNG ĐƯỢC BỎ TRỐNG. Pinyin phải chuẩn, có dấu thanh đầy đủ.
 - Điền ĐẦY ĐỦ tất cả các trường cho từng từ, không bỏ sót trường nào.
 - Không tự ý quét/truy vấn thêm ngoài dữ liệu có sẵn.
@@ -1166,6 +1264,7 @@ def chat_with_ai(
         "temperature": cfg.get("temperature", 0.3),
         "max_tokens": cfg.get("max_tokens", 8192),
     }
+    _apply_reasoning_effort(payload, cfg)
     
     api_base = cfg["api_base"].rstrip("/")
     url = f"{api_base}/chat/completions"
@@ -1261,11 +1360,13 @@ def extract_vocabulary_long_text(
     lang: str,
     custom_instruction: str = "",
     existing_words: Optional[List[str]] = None,
-    chunk_size: int = 10000,
+    chunk_size: Optional[int] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
     force_refresh: bool = False,
 ) -> list:
-    """Xử lý văn bản dài: chia đoạn, gọi AI, loại trùng"""
+    """Xử lý văn bản dài: chia đoạn, gọi AI, loại trùng, tổng hợp token."""
+    if chunk_size is None:
+        chunk_size = get_api_config().get("chunk_size", 8000)
     if len(text) <= chunk_size:
         return extract_vocabulary_with_ai(
             text, lang, custom_instruction, existing_words,
@@ -1279,15 +1380,34 @@ def extract_vocabulary_long_text(
     all_vocab = []
     seen = set()
     existing_set = set(w.lower().strip() for w in (existing_words or []))
+    # Từ đã trích ở đoạn trước → bổ sung vào danh sách "đã có" cho đoạn sau
+    # (giúp AI không trích trùng qua biên giới đoạn → chất lượng + tiết kiệm output)
+    prior_fronts = []
+
+    # Bộ gộp token/chi phí toàn bộ lần chạy
+    agg = {
+        "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+        "input_cost": 0.0, "output_cost": 0.0, "total_cost": 0.0,
+    }
+
+    def _acc(ti: dict):
+        agg["prompt_tokens"] += ti.get("prompt_tokens", 0)
+        agg["completion_tokens"] += ti.get("completion_tokens", 0)
+        agg["total_tokens"] += ti.get("total_tokens", 0)
+        agg["input_cost"] += ti.get("input_cost", 0)
+        agg["output_cost"] += ti.get("output_cost", 0)
+        agg["total_cost"] += ti.get("total_cost", 0)
 
     for idx, chunk in enumerate(chunks):
         if progress_callback:
             progress_callback(f"🔄 Đoạn {idx + 1}/{len(chunks)}...")
 
         try:
+            combined_existing = (existing_words or []) + prior_fronts
             vocab_chunk = extract_vocabulary_with_ai(
-                chunk, lang, custom_instruction, existing_words,
+                chunk, lang, custom_instruction, combined_existing,
                 progress_callback=None, force_refresh=force_refresh,
+                token_callback=_acc,
             )
             for item in vocab_chunk:
                 if not isinstance(item, dict):
@@ -1296,12 +1416,23 @@ def extract_vocabulary_long_text(
                 if key and key not in seen and key not in existing_set:
                     seen.add(key)
                     all_vocab.append(item)
+                    prior_fronts.append(key)
+            # Giới hạn danh sách prior để tránh phình prompt
+            if len(prior_fronts) > 400:
+                prior_fronts = prior_fronts[-400:]
         except Exception as e:
             if progress_callback:
                 progress_callback(f"⚠️ Lỗi đoạn {idx + 1}: {e}")
 
     if progress_callback:
-        progress_callback(f"✅ Tổng: {len(all_vocab)} từ mới")
+        if agg["total_tokens"] > 0:
+            progress_callback(
+                f"✅ Tổng: {len(all_vocab)} từ mới | "
+                f"🔢 {agg['total_tokens']:,} tokens (in {agg['prompt_tokens']:,} + out {agg['completion_tokens']:,}) | "
+                f"💰 ${agg['total_cost']:.4f}"
+            )
+        else:
+            progress_callback(f"✅ Tổng: {len(all_vocab)} từ mới")
 
     return all_vocab
 
@@ -1318,6 +1449,7 @@ def extract_grammar_with_ai(
     existing_patterns: Optional[List[str]] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
     force_refresh: bool = False,
+    token_callback: Optional[Callable[[dict], None]] = None,
 ) -> list:
     """
     Gửi văn bản đến AI API để trích xuất CẤU TRÚC NGỮ PHÁP (khác từ vựng).
@@ -1349,8 +1481,8 @@ def extract_grammar_with_ai(
 
     system_prompt = _GRAMMAR_SYSTEM_PROMPTS.get(lang, _GRAMMAR_SYSTEM_PROMPTS["japanese"])
 
-    # Giới hạn text
-    max_chars = 12000
+    # Giới hạn text — có thể cấu hình (mặc định 45k ký tự, DeepSeek 64k context)
+    max_chars = cfg.get("max_chars", 45000)
     if len(text) > max_chars:
         if progress_callback:
             progress_callback(f"📝 Văn bản {len(text)} ký tự → cắt còn {max_chars}")
@@ -1359,18 +1491,11 @@ def extract_grammar_with_ai(
     if progress_callback:
         progress_callback(f"🤖 Đang gọi {cfg['model']}...")
 
-    # User message: text + existing patterns list
+    # User message: text + existing patterns context (đã lọc gọn để tiết kiệm token)
     user_msg = f"Hãy trích xuất tất cả cấu trúc ngữ pháp từ văn bản sau:\n\n{text}"
 
     if existing_patterns and len(existing_patterns) > 0:
-        shown_patterns = existing_patterns[:2000]
-        patterns_str = ", ".join(shown_patterns)
-        user_msg += (
-            f"\n\n⚠️ CẤU TRÚC NGỮ PHÁP ĐÃ CÓ TRONG DECK (TUYỆT ĐỐI KHÔNG XUẤT RA):\n"
-            f"{patterns_str}\n"
-        )
-        if len(existing_patterns) > 2000:
-            user_msg += f"\n(Còn {len(existing_patterns) - 2000} pattern khác — tổng {len(existing_patterns)} đã có)"
+        user_msg += _format_existing_context(existing_patterns, text, label="CẤU TRÚC NGỮ PHÁP")
 
     if custom_instruction.strip():
         user_msg += f"\n\nYÊU CẦU BỔ SUNG (ưu tiên cao nhất):\n{custom_instruction.strip()}"
@@ -1386,6 +1511,7 @@ def extract_grammar_with_ai(
         "temperature": cfg.get("temperature", 0.3),
         "max_tokens": cfg.get("max_tokens", 8192),
     }
+    _apply_reasoning_effort(payload, cfg)
 
     api_base = cfg["api_base"].rstrip("/")
     url = f"{api_base}/chat/completions"
@@ -1414,6 +1540,11 @@ def extract_grammar_with_ai(
             usage.get("prompt_tokens", 0),
             usage.get("completion_tokens", 0),
         )
+        if token_callback:
+            try:
+                token_callback(token_info)
+            except Exception:
+                pass
 
     msg = result["choices"][0]["message"]
     content = msg.get("content", "") or ""
@@ -1431,6 +1562,7 @@ def extract_grammar_with_ai(
     if progress_callback:
         progress_callback("🔍 Đang parse JSON...")
 
+    _check_truncated_output(content, progress_callback)
     grammar_list, comment = _parse_ai_json_with_comment(content)
 
     # Chỉ giữ các item có pattern
@@ -1470,11 +1602,13 @@ def extract_grammar_long_text(
     lang: str,
     custom_instruction: str = "",
     existing_patterns: Optional[List[str]] = None,
-    chunk_size: int = 10000,
+    chunk_size: Optional[int] = None,
     progress_callback: Optional[Callable[[str], None]] = None,
     force_refresh: bool = False,
 ) -> list:
-    """Xử lý văn bản dài: chia đoạn, gọi AI trích ngữ pháp, loại trùng"""
+    """Xử lý văn bản dài: chia đoạn, gọi AI trích ngữ pháp, loại trùng, tổng hợp token."""
+    if chunk_size is None:
+        chunk_size = get_api_config().get("chunk_size", 8000)
     if len(text) <= chunk_size:
         return extract_grammar_with_ai(
             text, lang, custom_instruction, existing_patterns,
@@ -1488,6 +1622,20 @@ def extract_grammar_long_text(
     all_grammar = []
     seen = set()
     existing_set = set(p.lower().strip() for p in (existing_patterns or []))
+    # Dedup theo (pattern|meaning) → cho phép cùng pattern, khác nghĩa = thẻ riêng
+
+    agg = {
+        "prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0,
+        "input_cost": 0.0, "output_cost": 0.0, "total_cost": 0.0,
+    }
+
+    def _acc(ti: dict):
+        agg["prompt_tokens"] += ti.get("prompt_tokens", 0)
+        agg["completion_tokens"] += ti.get("completion_tokens", 0)
+        agg["total_tokens"] += ti.get("total_tokens", 0)
+        agg["input_cost"] += ti.get("input_cost", 0)
+        agg["output_cost"] += ti.get("output_cost", 0)
+        agg["total_cost"] += ti.get("total_cost", 0)
 
     for idx, chunk in enumerate(chunks):
         if progress_callback:
@@ -1497,12 +1645,15 @@ def extract_grammar_long_text(
             grammar_chunk = extract_grammar_with_ai(
                 chunk, lang, custom_instruction, existing_patterns,
                 progress_callback=None, force_refresh=force_refresh,
+                token_callback=_acc,
             )
             for item in grammar_chunk:
                 if not isinstance(item, dict):
                     continue
-                key = (item.get("pattern") or "").strip().lower()
-                if key and key not in seen and key not in existing_set:
+                pat = (item.get("pattern") or "").strip().lower()
+                mean = (item.get("meaning") or "").strip().lower()
+                key = f"{pat}|{mean}"
+                if pat and key not in seen and pat not in existing_set:
                     seen.add(key)
                     all_grammar.append(item)
         except Exception as e:
@@ -1510,7 +1661,14 @@ def extract_grammar_long_text(
                 progress_callback(f"⚠️ Lỗi đoạn {idx + 1}: {e}")
 
     if progress_callback:
-        progress_callback(f"✅ Tổng: {len(all_grammar)} cấu trúc ngữ pháp mới")
+        if agg["total_tokens"] > 0:
+            progress_callback(
+                f"✅ Tổng: {len(all_grammar)} cấu trúc ngữ pháp mới | "
+                f"🔢 {agg['total_tokens']:,} tokens (in {agg['prompt_tokens']:,} + out {agg['completion_tokens']:,}) | "
+                f"💰 ${agg['total_cost']:.4f}"
+            )
+        else:
+            progress_callback(f"✅ Tổng: {len(all_grammar)} cấu trúc ngữ pháp mới")
 
     return all_grammar
 
