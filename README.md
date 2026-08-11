@@ -5,23 +5,43 @@
 [![Version](https://img.shields.io/badge/version-17.0.0-blue)](manifest.json)
 [![Anki](https://img.shields.io/badge/anki-%3E%3D2.1.50-green)](manifest.json)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-yellow)](manifest.json)
+[![Tests](https://img.shields.io/badge/tests-245%2B-brightgreen)](tests/)
 
 ---
 
 ## ✨ Tính năng
 
+### 🇯🇵🇨🇳🇰🇷 Đa ngôn ngữ (3 ngôn ngữ)
+| Tính năng | Mô tả |
+|-----------|-------|
+| 🌍 **3 Ngôn Ngữ** | Nhật Bản, Trung Quốc & **Hàn Quốc** (mới V17.0) — mỗi ngôn ngữ có cấu hình riêng: bộ lọc cấp độ (JLPT N5-N1 / HSK 1-6 / **TOPIK I-II**) |
+| 🔤 **Romanization** | Furigana/Pinyin cho Nhật-Trung, **Romanization chuẩn Revised Romanization cho tiếng Hàn** (field + ví dụ hiển thị trên thẻ) |
+| 🎤 **TTS Đa Engine** | Edge TTS (chất lượng cao) → gTTS (fallback) → VoiceVox (local JP). Giọng Hàn ko-KR cho tiếng Hàn |
+
+### 🎯 Combo Mode — 1 từ = 1 card
+| Tính năng | Mô tả |
+|-----------|-------|
+| 🎯 **Card gộp 5 chế độ** | Thay vì 1 từ tạo 5 card riêng, giờ **1 từ = 1 card duy nhất** → deck đếm đúng số từ vựng. Trong card có **thanh chọn chế độ** chuyển đổi bằng JS: QA (Nhật→Việt), VN (Việt→Nhật), WB (Ghép chữ), PRON (Furigana/Pinyin/Romanization), LG (Ẩn chữ cái) |
+| 🎛️ **Bộ chọn chế độ ở Overview** | Patch màn hình Overview (không ghi đè Onigiri) → chèn bộ chọn mode + nút "Study now", mode lưu vào `mw.col.conf` |
+| 🔁 **Migration tự động** | Model cũ (5 card) khi tái tạo sẽ giữ card mode chính + lịch sử học, tự xóa 4 card thừa |
+
+### 🤖 AI & Xử lý nội dung
 | Tính năng | Mô tả |
 |-----------|-------|
 | 📏 **Nội dung dài 50k+** | Xử lý toàn bộ văn bản dài (tự chia đoạn ~8k ký tự/lần để chất lượng cao + không tràn token output); không bị cắt, xử lý hết 50k-100k+. |
-| 💾 **Lưu trạng thái 2 luồng** | Text + file kẹp của Từ vựng và Ngữ pháp (mỗi ngôn ngữ) được lưu riêng, khôi phục khi mở lại Factory — không lẫn nhau, đỡ gọi lại AI. |
 | 🧠 **Mức độ suy nghĩ AI** | Bộ chọn Thấp/Trung bình/Cao (reasoning_effort) trong Cài Đặt AI → cân bằng chất lượng vs token. |
-|  **Kẹp File Tham Khảo** | Đính kèm TXT/MD/CSV/PDF/DOCX/XLSX làm tài liệu → AI đọc nội dung để trích xuất từ vựng/ngữ pháp. (DeepSeek chỉ nhận text → add-on tự trích text tại máy.) |
-| 📘 **Ngữ pháp** | Note Type ngữ pháp riêng (Nhật & Trung): thẻ 2 chiều "Cấu trúc→Nghĩa" & "Nghĩa→Cấu trúc", AI trích xuất pattern + công thức + cách dùng + ví dụ. |
+| 📎 **Kẹp File Tham Khảo** | Đính kèm TXT/MD/CSV/PDF/DOCX/XLSX làm tài liệu → AI đọc nội dung để trích xuất từ vựng/ngữ pháp. |
+| 📘 **Ngữ pháp** | Note Type ngữ pháp riêng cho cả 3 ngôn ngữ: thẻ 2 chiều "Cấu trúc→Nghĩa" & "Nghĩa→Cấu trúc", AI trích xuất pattern + công thức + cách dùng + ví dụ (có đánh dấu `<b>…</b>` trong ví dụ). |
 | 🤖 **AI Trích Xuất** | Dùng OpenAI/DeepSeek/Ollama để trích xuất từ vựng từ văn bản. Tự động tránh từ đã có trong deck. |
 | 💬 **AI Chat** | Trợ lý học tập thông minh, hiểu ngữ cảnh Anki của bạn. |
-| 🎤 **TTS Đa Engine** | Edge TTS (chất lượng cao) → gTTS (fallback) → VoiceVox (local JP). |
-| 📝 **5 Loại Thẻ** | Nhật→Việt, Việt→Nhật, Ghép chữ, Furigana/Pinyin, Ẩn chữ cái. |
-| 🎮 **Interactive Games** | Word Building (drag & drop), Handwriting practice, Letter Gap. |
+| ⚡ **Tối ưu Token** | Chỉ gửi từ vựng/ngữ pháp trùng với nội dung vào prompt (thay vì toàn bộ deck → giảm mạnh input); tổng hợp token/chi phí theo toàn bộ chunk. |
+| 💾 **Lưu trạng thái 2 luồng** | Text + file kẹp của Từ vựng và Ngữ pháp (mỗi ngôn ngữ) được lưu riêng, khôi phục khi mở lại Factory — không lẫn nhau, đỡ gọi lại AI. |
+
+### 🗂️ Quản lý & Trải nghiệm
+| Tính năng | Mô tả |
+|-----------|-------|
+| 🗂️ **Deck Manager** | Tạo/đổi tên/xóa deck & sub-deck, xem cây deck và số thẻ (utils/deck_manager.py + ui/deck_manager_dialog.py) |
+| 🎮 **Interactive Games** | Word Building (drag & drop, có pool riêng cho Hangul Hàn), Handwriting practice, Letter Gap. |
 | 🔍 **Kiểm Định Thông Minh** | Phát hiện từ mới, cập nhật, trùng lặp, và từ cùng mặt chữ khác nghĩa. |
 | ⚡ **Speed Control** | Tùy chỉnh tốc độ audio 0.25×–4.0× ngay trên thẻ review. |
 
@@ -41,7 +61,7 @@
 cd %APPDATA%/Anki2/addons21/
 
 # 2. Clone repo
-git clone https://github.com/your-username/AnkiTool_Integrated.git
+git clone https://github.com/NDChi243/Anki_AI_Factory.git
 
 # 3. Khởi động lại Anki
 ```
@@ -84,7 +104,7 @@ git clone https://github.com/your-username/AnkiTool_Integrated.git
 4. Bấm **🚀 XUẤT XƯỞNG**
 
 ### Cách 2: AI Trích Xuất
-1. Dán văn bản tiếng Nhật/Trung vào ô "📝 Dán văn bản..."
+1. Dán văn bản tiếng Nhật/Trung/Hàn vào ô "📝 Dán văn bản..."
 2. (Optional) Thêm lời nhắn: "Chỉ lấy từ N3+, chủ đề ẩm thực"
 3. Bấm **🤖 AI Trích Xuất**
 4. Xem trước, chỉnh sửa, xóa nếu cần
@@ -101,16 +121,16 @@ git clone https://github.com/your-username/AnkiTool_Integrated.git
 ## 🏗️ Cấu trúc dự án
 
 ```
-AnkiTool_Integrated/
-├── __init__.py           # Entry point + Main Dialog
-├── audio/                # TTS engines (Edge, gTTS, VoiceVox)
-├── Language/             # Language configs (Japanese, Chinese)
-├── mode/                 # Card templates, CSS, JS games
-├── ui/                   # UI dialogs (AiChatDialog, theme, batch...)
-├── workers/              # Background threads (import, AI, preview, batch)
-├── utils/                # AI extractor, batch processor, JSON parser, logger, i18n, deck cache
-├── hooks/                # Reviewer hooks (speed control, letter gap)
-├── tests/                # 56+ unit tests
+Anki_AI_Factory/
+├── __init__.py           # Entry point + Main Dialog (AnkiSmartFactory)
+├── audio/                # TTS engines (Edge, gTTS, VoiceVox) — router engine.py
+├── Language/             # Language configs (Japanese, Chinese, Korean + grammar)
+├── mode/                 # Card templates, CSS, JS games (combo mode templates)
+├── ui/                   # UI dialogs (ai_dialogs, ai_preview, batch, deck_manager, theme...)
+├── workers/              # Background threads (import, AI, preview, batch, deck scan)
+├── utils/                # AI extractor, batch processor, JSON parser, logger, i18n, deck cache, deck manager
+├── hooks/                # Reviewer hooks (speed, letter gap) + overview_mode.py
+├── tests/                # 245+ unit & integration tests
 ├── .claude/              # 🆕 Hệ thống SKILL cho AI — nguồn kiến thức chính thức
 │   ├── CLAUDE.md         # Memory gốc + index skills (đọc trước)
 │   └── skills/           # 11 skill theo chủ đề (bảo trì/nâng cấp tiết kiệm token)
@@ -133,12 +153,13 @@ AnkiTool_Integrated/
 pip install pytest
 
 # Chạy tất cả tests
-cd AnkiTool_Integrated
+cd Anki_AI_Factory
 python -m pytest tests/ -v
 
 # Chạy test cụ thể
 python -m pytest tests/test_json_parser.py -v
 python -m pytest tests/test_audio_engine.py -v
+python -m pytest tests/test_combo_mode.py -v
 ```
 
 ---
@@ -169,6 +190,7 @@ MIT License — Xem file `LICENSE`
 
 - **Không commit `utils/ai_config.json`** — file này đã được thêm vào `.gitignore`
 - Dùng `utils/ai_config.example.json` làm mẫu
+- Các dữ liệu cá nhân (`utils/import_history.json`, `utils/ai_cache/`, `utils/factory_state.json`) cũng nằm trong `.gitignore`
 - Nếu lỡ commit API key, **revoke key ngay** trên dashboard của provider
 
 ---
