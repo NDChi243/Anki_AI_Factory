@@ -15,10 +15,31 @@ import os
 
 from aqt.qt import (
     QDialog, QVBoxLayout, QHBoxLayout, QLabel, QPushButton, QComboBox,
-    QSlider, QSpinBox, QColorDialog, QGroupBox, QGridLayout, QSplitter,
+    QSlider, QSpinBox, QColorDialog, QGroupBox, QGridLayout,
     Qt, QColor,
 )
 from aqt.utils import tooltip
+
+# QSplitter có thể không có trong aqt.qt của một số version Anki → fallback
+try:
+    from aqt.qt import QSplitter
+except ImportError:
+    try:
+        from PyQt6.QtWidgets import QSplitter
+    except ImportError:
+        try:
+            from PyQt5.QtWidgets import QSplitter
+        except ImportError:
+            try:
+                from PySide6.QtWidgets import QSplitter
+            except ImportError:
+                try:
+                    from PySide2.QtWidgets import QSplitter
+                except ImportError:
+                    # Fallback cuối: stub class (chỉ để import không lỗi khi test ngoài Anki)
+                    class QSplitter:
+                        def __init__(self, *args, **kwargs):
+                            pass
 
 THEME_FILE = os.path.join(
     os.path.dirname(os.path.dirname(os.path.abspath(__file__))),

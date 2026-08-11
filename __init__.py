@@ -1068,6 +1068,26 @@ class AnkiSmartFactory(QDialog):
                     return str(item[k]).strip()
             return ''
 
+        # ── Build lookup: front_lower → notes (tránh N+1 query) ──
+        front_to_notes = {}
+        meaning_to_notes = {}
+        if mid:
+            try:
+                all_nids = mw.col.find_notes(mid_filter)
+                for nid in all_nids:
+                    try:
+                        note = mw.col.get_note(nid)
+                        f = str(note.get(front_field, "")).strip().lower()
+                        if f:
+                            front_to_notes.setdefault(f, []).append(note)
+                        m = str(note.get("Meaning", "")).strip().lower()
+                        if m:
+                            meaning_to_notes.setdefault(m, []).append(note)
+                    except Exception:
+                        continue
+            except Exception:
+                pass
+
         for item in self.raw_data:
             if not isinstance(item, dict):
                 continue
@@ -1087,9 +1107,10 @@ class AnkiSmartFactory(QDialog):
             action, target_nid, updatable = "add", None, []
             conflict_info = None
 
-            exact_ids = mw.col.find_notes(f'{mid_filter} "{front_field}:{self._esc(front)}"')
-            if exact_ids:
-                old = mw.col.get_note(exact_ids[0])
+            exact_notes = front_to_notes.get(front.lower(), [])
+            if exact_notes:
+                old = exact_notes[0]
+                exact_ids = [old.id]
                 updatable = self._find_updatable_fields(old, item)
                 if updatable:
                     action, target_nid = "update", exact_ids[0]
@@ -1139,9 +1160,7 @@ class AnkiSmartFactory(QDialog):
                 continue
 
             if level:
-                same_mean = mw.col.find_notes(
-                    f'{mid_filter} Meaning:"{self._esc(meaning)}" "{level_field}:{level}"'
-                )
+                same_mean = meaning_to_notes.get(meaning.lower(), [])
                 if same_mean:
                     action = "add_partial"
                     cnt["partial"] += 1

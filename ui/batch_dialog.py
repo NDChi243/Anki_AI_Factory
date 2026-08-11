@@ -10,6 +10,7 @@ from aqt.qt import (
 from aqt.utils import tooltip
 
 from utils.batch_processor import estimate_batch_cost, parse_word_list
+from utils.ai_extractor import is_openrouter
 
 
 class BatchWordListDialog(QDialog):
@@ -23,8 +24,8 @@ class BatchWordListDialog(QDialog):
         self.grammar = grammar
         item_label = "Cấu Trúc Ngữ Pháp" if grammar else "Từ Vựng"
         self.setWindowTitle(f"🚀 Xử Lý Danh Sách {item_label} Lớn — Batch AI")
-        self.setMinimumSize(800, 650)
-        self.resize(900, 750)
+        self.setMinimumSize(800, 700)
+        self.resize(900, 800)
         self.setWindowFlags(
             self.windowFlags()
             | Qt.WindowType.WindowMinMaxButtonsHint
@@ -36,6 +37,9 @@ class BatchWordListDialog(QDialog):
         self.result_vocab = None
         self._batch_thread = None
         self._deck_thread = None
+        # Tự phát hiện OpenRouter → mặc định bật chế độ chậm (tránh rate limit 20 req/phút)
+        self._is_openrouter = is_openrouter()
+        self.slow_mode = self._is_openrouter
 
         self._setup_ui()
         self._update_estimate()
@@ -166,6 +170,23 @@ class BatchWordListDialog(QDialog):
         deck_grp.setLayout(deck_layout)
         vl.addWidget(deck_grp)
 
+        # ── OpenRouter Slow Mode ────────────────────────────
+        if self._is_openrouter:
+            slow_grp = QGroupBox("🐢 Chế độ OpenRouter Free")
+            slow_layout = QHBoxLayout()
+            self.chk_slow_mode = QCheckBox("Chế độ chậm & ổn định (tránh rate limit 20 req/phút)")
+            self.chk_slow_mode.setChecked(True)
+            self.chk_slow_mode.setToolTip(
+                "OpenRouter free giới hạn ~20 request/phút.\n"
+                "Bật: tự đặt delay 3.2s/batch + retry mạnh khi gặp 429.\n"
+                "Tắt: nhanh hơn nhưng dễ bị rate limit."
+            )
+            self.chk_slow_mode.toggled.connect(self._update_estimate)
+            slow_layout.addWidget(self.chk_slow_mode)
+            slow_layout.addStretch()
+            slow_grp.setLayout(slow_layout)
+            vl.addWidget(slow_grp)
+
         # ── Estimate ────────────────────────────────────────
         self.lbl_estimate = QLabel(
             "<div style='background:#fef9e7;border:1px solid #f39c12;border-radius:8px;"
@@ -234,14 +255,24 @@ class BatchWordListDialog(QDialog):
         batch_size = self.spin_batch.value()
         estimate = estimate_batch_cost(word_count, self.lang, batch_size)
 
+        # Ước tính thời gian thực tế theo chế độ (OpenRouter slow = 3.2s/batch + thời gian AI phản hồi)
+        batches = estimate["estimated_batches"]
+        if self._is_openrouter and getattr(self, "chk_slow_mode", None) and self.chk_slow_mode.isChecked():
+            delay_per_batch = 3.2
+            est_seconds = int(batches * (delay_per_batch + 7))  # 3.2s delay + ~7s AI phản hồi
+            time_note = f"⏱ ~{est_seconds}s ({batches} batch × ~{delay_per_batch + 7:.0f}s — chế độ chậm OpenRouter)"
+        else:
+            est_seconds = estimate["estimated_time_seconds"]
+            time_note = f"⏱ ~{est_seconds}s"
+
         self.lbl_estimate.setText(
             f"<div style='background:#fef9e7;border:1px solid #f39c12;border-radius:8px;"
             f"padding:10px;color:#7d6608;'>"
             f"📊 <b>Ước tính:</b> {estimate['total_words']} từ → "
-            f"~{estimate['estimated_batches']} batch "
+            f"~{batches} batch "
             f"({batch_size} từ/batch) | "
             f"~${estimate['estimated_cost_usd']:.4f} USD | "
-            f"~{estimate['estimated_time_seconds']}s | "
+            f"{time_note} | "
             f"~{estimate['estimated_input_tokens']:,} input + "
             f"~{estimate['estimated_output_tokens']:,} output tokens"
             f"</div>"
@@ -265,8 +296,11 @@ class BatchWordListDialog(QDialog):
         self.progress_bar.setRange(0, 0)  # Indeterminate
         self.lbl_status.setText("⏳ Đang chuẩn bị...")
 
-        # Start thread
+        # Start thread — truyền slow_mode nếu checkbox OpenRouter tồn tại
         from workers.batch_workers import BatchProcessThread
+
+        if self._is_openrouter and hasattr(self, "chk_slow_mode"):
+            self.slow_mode = self.chk_slow_mode.isChecked()
 
         self._batch_thread = BatchProcessThread(
             raw_text=text,
@@ -275,6 +309,7 @@ class BatchWordListDialog(QDialog):
             existing_words=self.existing_words,
             batch_size=self.spin_batch.value(),
             grammar=self.grammar,
+            slow_mode=self.slow_mode,
         )
         self._batch_thread.progress.connect(self._on_progress)
         self._batch_thread.finished.connect(self._on_batch_finished)

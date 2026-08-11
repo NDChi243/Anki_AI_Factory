@@ -110,6 +110,18 @@ _SSL_CONTEXT_LOCAL.verify_mode = ssl.CERT_NONE
 
 _LOCAL_HOSTS = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
 
+# OpenRouter — phát hiện để áp dụng rate limit phù hợp (free tier ~20 req/phút)
+_OPENROUTER_MARKERS = ("openrouter.ai", "openrouter")
+
+
+def is_openrouter(api_base: str = None) -> bool:
+    """Kiểm tra xem API base có phải OpenRouter không (để áp dụng rate limit phù hợp)."""
+    if not api_base:
+        cfg = get_api_config()
+        api_base = cfg.get("api_base", "")
+    base = (api_base or "").lower()
+    return any(m in base for m in _OPENROUTER_MARKERS)
+
 
 def _pick_ssl_context(host: str) -> ssl.SSLContext:
     """Chọn SSL context: không verify chỉ khi host thực sự là local."""
@@ -117,9 +129,53 @@ def _pick_ssl_context(host: str) -> ssl.SSLContext:
         return _SSL_CONTEXT_LOCAL
     return _SSL_CONTEXT_SECURE
 
-# Connection pool cache: host → (HTTPSConnection | HTTPConnection)
-_CONN_POOL: dict = {}
-_CONN_POOL_LOCK = threading.Lock()
+# Connection pool cache theo thread — mỗi thread có connection riêng
+# (tránh race condition khi nhiều QThread/ThreadPoolExecutor gọi API song song)
+_conn_pool_local = threading.local()
+
+
+def _create_conn(host: str, port: int, use_ssl: bool, timeout: int, ssl_context=None):
+    """Tạo connection mới."""
+    if use_ssl:
+        return http.client.HTTPSConnection(host, port, timeout=timeout, context=ssl_context)
+    return http.client.HTTPConnection(host, port, timeout=timeout)
+
+
+def _get_thread_conn(pool_key: str, host: str, port: int, use_ssl: bool,
+                     timeout: int, ssl_context=None, force_new: bool = False):
+    """Lấy (hoặc tạo) connection từ pool của thread hiện tại."""
+    pool = getattr(_conn_pool_local, "pool", None)
+    if pool is None:
+        pool = {}
+        _conn_pool_local.pool = pool
+    conn = pool.get(pool_key)
+    if force_new or conn is None:
+        conn = _create_conn(host, port, use_ssl, timeout, ssl_context)
+        pool[pool_key] = conn
+    return conn
+
+
+# Rate limit state — theo dõi số lần gặp 429 để tự giảm tốc
+_rate_limit_state = threading.local()
+
+
+def _get_rate_limit_delay() -> float:
+    """Lấy delay hiện tại giữa các request (tự tăng khi gặp 429)."""
+    return getattr(_rate_limit_state, "delay", 0.0)
+
+
+def _bump_rate_limit_delay():
+    """Tăng delay khi gặp rate limit (429) — tự giảm tốc dần."""
+    current = getattr(_rate_limit_state, "delay", 0.0)
+    if current == 0.0:
+        _rate_limit_state.delay = 3.2  # OpenRouter free ~20 req/phút → ~3s/request
+    else:
+        _rate_limit_state.delay = min(10.0, current * 1.5)  # 3.2 → 4.8 → 7.2 → 10
+
+
+def _reset_rate_limit_delay():
+    """Reset delay về 0 khi không còn gặp 429 (thành công liên tục)."""
+    _rate_limit_state.delay = 0.0
 
 
 def _http_post_json(url: str, payload: dict, headers: dict,
@@ -129,9 +185,10 @@ def _http_post_json(url: str, payload: dict, headers: dict,
     """Gửi POST request với JSON body, trả về response body dạng string.
 
     Dùng http.client thay vì urllib.request để:
-    - Connection reuse (HTTP/1.1 keep-alive)
+    - Connection reuse (HTTP/1.1 keep-alive) theo thread
     - Đọc response theo chunk → progress callback
     - Timeout thực sự hoạt động
+    - Xử lý HTTP 429 (Rate Limit) chuyên biệt: đọc Retry-After, retry mạnh hơn
     """
     parsed = urlparse(url)
     host = parsed.hostname or "localhost"
@@ -140,35 +197,55 @@ def _http_post_json(url: str, payload: dict, headers: dict,
     use_ssl = parsed.scheme == "https"
     ssl_context = _pick_ssl_context(host)
 
-    # Lấy hoặc tạo connection từ pool (thread-safe)
+    # Lấy hoặc tạo connection từ pool của thread hiện tại (không cần lock)
     pool_key = f"{host}:{port}"
-    with _CONN_POOL_LOCK:
-        conn = _CONN_POOL.get(pool_key)
-        if conn is None:
-            if use_ssl:
-                conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=ssl_context)
-            else:
-                conn = http.client.HTTPConnection(host, port, timeout=timeout)
-            _CONN_POOL[pool_key] = conn
+    conn = _get_thread_conn(pool_key, host, port, use_ssl, timeout, ssl_context)
 
     body_bytes = json.dumps(payload).encode("utf-8")
     headers["Content-Length"] = str(len(body_bytes))
 
+    # Nếu đang bị rate limit (từ lần trước), chờ trước khi gửi
+    rate_delay = _get_rate_limit_delay()
+    if rate_delay > 0:
+        if progress_callback:
+            progress_callback(f"⏳ Đang chờ {rate_delay:.1f}s (tránh rate limit)...")
+        time.sleep(rate_delay)
+
     last_error = None
-    max_retries = 2
+    # Retry nhiều hơn cho 429 (rate limit thường tạm thời) — tối đa 5 lần
+    max_retries = 5
     for attempt in range(max_retries + 1):
         try:
             if attempt > 0:
-                # Tạo connection mới nếu retry (thread-safe)
-                if use_ssl:
-                    conn = http.client.HTTPSConnection(host, port, timeout=timeout, context=ssl_context)
-                else:
-                    conn = http.client.HTTPConnection(host, port, timeout=timeout)
-                with _CONN_POOL_LOCK:
-                    _CONN_POOL[pool_key] = conn
+                # Tạo connection MỚI khi retry (connection cũ có thể đã hỏng)
+                conn = _get_thread_conn(pool_key, host, port, use_ssl, timeout, ssl_context,
+                                        force_new=True)
 
             conn.request("POST", path, body=body_bytes, headers=headers)
             resp = conn.getresponse()
+
+            if resp.status == 429:
+                # Rate limit — đọc Retry-After nếu có, chờ đúng thời gian
+                retry_after = resp.getheader("Retry-After")
+                err_body = resp.read().decode("utf-8", errors="replace")[:300]
+                _bump_rate_limit_delay()
+                if retry_after:
+                    try:
+                        wait = float(retry_after)
+                    except ValueError:
+                        wait = 30.0
+                else:
+                    wait = 30.0
+                if progress_callback:
+                    progress_callback(
+                        f"⚠️ Rate limit (429) — chờ {wait:.0f}s rồi thử lại...\n"
+                        f"💡 OpenRouter free giới hạn ~20 req/phút. Đang tự chậm lại."
+                    )
+                time.sleep(wait)
+                last_error = http.client.HTTPException(
+                    f"HTTP 429 Rate Limit: {err_body}"
+                )
+                continue
 
             if resp.status >= 400:
                 err_body = resp.read().decode("utf-8", errors="replace")[:500]
@@ -194,6 +271,8 @@ def _http_post_json(url: str, payload: dict, headers: dict,
                     progress_callback(f"⏳ Đang nhận dữ liệu... {pct}%")
 
             body = b"".join(chunks).decode("utf-8")
+            # Thành công → reset rate limit delay (nếu có)
+            _reset_rate_limit_delay()
             return body
 
         except (http.client.HTTPException, ConnectionError, TimeoutError, OSError) as e:
@@ -398,7 +477,10 @@ def _ai_cache_get(text: str, lang: str, instruction: str, existing_hash: str, ki
         try:
             with open(cache_file, "r", encoding="utf-8") as f:
                 data = json.load(f)
-            if time.time() - data.get("_cached_at", 0) < 7 * 24 * 3600:
+            # TTL cache: 14 ngày nếu dùng OpenRouter (giảm request lặp lại do rate limit),
+            # 7 ngày cho provider khác
+            ttl = 14 * 24 * 3600 if is_openrouter() else 7 * 24 * 3600
+            if time.time() - data.get("_cached_at", 0) < ttl:
                 return data.get("vocab", [])
         except Exception:
             pass
@@ -1881,12 +1963,40 @@ def init_import_history(force_rescan: bool = False) -> dict:
                         continue
 
                     existing_keys = set(data["entries"][lang_key].keys())
+                    # Lấy field index từ model (1 lần)
+                    model = mw.col.models.by_name(model_name)
+                    if not model:
+                        continue
+                    field_names = [f["name"] for f in model["flds"]]
+                    front_idx = field_names.index(front_field) if front_field in field_names else 0
+                    meaning_idx = field_names.index("Meaning") if "Meaning" in field_names else -1
+                    furi_idx = field_names.index(cfg.get("furi_label", "")) if cfg.get("furi_label", "") in field_names else -1
+                    level_idx = field_names.index(cfg.get("level_field", "")) if cfg.get("level_field", "") in field_names else -1
+
+                    # Batch query: lấy flds trực tiếp từ SQL (tránh N+1 get_note)
                     batch_size = 200
                     for i in range(0, len(note_ids), batch_size):
-                        for nid in note_ids[i:i + batch_size]:
+                        batch = note_ids[i:i + batch_size]
+                        try:
+                            placeholders = ",".join("?" * len(batch))
+                            rows = mw.col.db.all(
+                                f"SELECT id, flds FROM notes WHERE id IN ({placeholders})", *batch
+                            )
+                        except Exception:
+                            rows = []
+                            for nid in batch:
+                                try:
+                                    note = mw.col.get_note(nid)
+                                    rows.append((nid, "\x1f".join(str(note[f]) for f in field_names)))
+                                except Exception:
+                                    continue
+
+                        for nid, flds_raw in rows:
                             try:
-                                note = mw.col.get_note(nid)
-                                front = str(note.get(front_field, "")).strip()
+                                fields = flds_raw.split("\x1f")
+                                if front_idx >= len(fields):
+                                    continue
+                                front = fields[front_idx].strip()
                                 if not front:
                                     continue
 
@@ -1907,37 +2017,21 @@ def init_import_history(force_rescan: bool = False) -> dict:
                                 }
 
                                 # Lấy meaning
-                                for meaning_field in ["Meaning", "meaning"]:
-                                    try:
-                                        val = str(note.get(meaning_field, "")).strip()
-                                        if val:
-                                            entry["meaning"] = val
-                                            break
-                                    except Exception:
-                                        pass
+                                if meaning_idx >= 0 and meaning_idx < len(fields):
+                                    entry["meaning"] = fields[meaning_idx].strip()
 
                                 # Lấy furigana/pinyin
-                                furi_field = cfg.get("furi_label", "")
-                                if furi_field:
-                                    try:
-                                        val = str(note.get(furi_field, "")).strip()
-                                        if val:
-                                            if lang_key == "japanese":
-                                                entry["furigana"] = val
-                                            else:
-                                                entry["pinyin"] = val
-                                    except Exception:
-                                        pass
+                                if furi_idx >= 0 and furi_idx < len(fields):
+                                    val = fields[furi_idx].strip()
+                                    if val:
+                                        if lang_key == "japanese":
+                                            entry["furigana"] = val
+                                        else:
+                                            entry["pinyin"] = val
 
                                 # Lấy cấp độ
-                                level_field = cfg.get("level_field", "")
-                                if level_field:
-                                    try:
-                                        val = str(note.get(level_field, "")).strip()
-                                        if val:
-                                            entry["level"] = val
-                                    except Exception:
-                                        pass
+                                if level_idx >= 0 and level_idx < len(fields):
+                                    entry["level"] = fields[level_idx].strip()
 
                                 data["entries"][lang_key][front_lower] = entry
                                 total_scanned += 1

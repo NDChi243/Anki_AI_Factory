@@ -25,8 +25,9 @@ from .ai_extractor import (
     get_api_config, _SYSTEM_PROMPTS, _JSON_TEMPLATES,
     _GRAMMAR_SYSTEM_PROMPTS, _GRAMMAR_JSON_TEMPLATES,
     _make_existing_hash, _parse_ai_json_with_comment,
-    _apply_reasoning_effort,
+    _apply_reasoning_effort, _http_post_json,
     get_existing_vocab_from_deck, init_import_history,
+    is_openrouter, _get_rate_limit_delay,
 )
 
 logger = get_logger()
@@ -343,41 +344,13 @@ def _call_ai_for_batch(
         "Content-Type": "application/json",
         "Authorization": f"Bearer {cfg['api_key']}",
     }
-    
-    last_error = None
-    for attempt in range(MAX_RETRIES + 1):
-        try:
-            if progress_callback and attempt > 0:
-                progress_callback(f"  🔄 Retry {attempt}/{MAX_RETRIES}...")
-            
-            req = urllib.request.Request(
-                url, data=json.dumps(payload).encode("utf-8"),
-                headers=headers, method="POST"
-            )
-            
-            _timeout = 600 if "reasoner" in cfg.get("model", "") else 300
-            with urllib.request.urlopen(req, timeout=_timeout) as resp:
-                body = resp.read().decode("utf-8")
-            break
-            
-        except urllib.error.HTTPError as e:
-            err_body = ""
-            try:
-                err_body = e.read().decode("utf-8")[:500]
-            except Exception:
-                pass
-            raise RuntimeError(f"❌ Lỗi API ({e.code}): {e.reason}\n{err_body}")
-        
-        except (urllib.error.URLError, TimeoutError, OSError) as e:
-            last_error = e
-            if attempt < MAX_RETRIES:
-                delay = RETRY_BASE_DELAY * (2 ** attempt)
-                if progress_callback:
-                    progress_callback(f"  ⚠️ Timeout, retry sau {delay:.0f}s...")
-                time.sleep(delay)
-                continue
-    else:
-        raise RuntimeError(f"❌ Timeout sau {MAX_RETRIES + 1} lần thử: {last_error}")
+
+    _timeout = 600 if "reasoner" in cfg.get("model", "") else 300
+    try:
+        body = _http_post_json(url, payload, headers, timeout=_timeout,
+                               progress_callback=progress_callback)
+    except RuntimeError as e:
+        raise RuntimeError(f"❌ Lỗi API: {e}")
     
     result = json.loads(body)
     if "choices" not in result or len(result["choices"]) == 0:
@@ -463,6 +436,7 @@ def process_large_word_list(
     progress_callback: Optional[Callable[[str], None]] = None,
     should_abort: Optional[Callable[[], bool]] = None,
     grammar: bool = False,
+    slow_mode: bool = False,
 ) -> List[dict]:
     """
     🚀 XỬ LÝ DANH SÁCH TỪ VỰNG LỚN QUA AI.
@@ -527,6 +501,25 @@ def process_large_word_list(
     existing_set = set(w.lower().strip() for w in (existing_words or []))
     total_batches = len(batches)
     total_errors = 0
+
+    # Rate limit theo provider + slow_mode:
+    # - slow_mode=True (mặc định khi OpenRouter): delay 3.2s/batch → ~18 req/phút (an toàn < 20)
+    # - slow_mode=False & không OpenRouter: giữ 1.5s như cũ (nhanh hơn)
+    # - slow_mode=False & OpenRouter: cho phép 1.5s (user chủ động chấp nhận rủi ro rate limit)
+    if slow_mode:
+        base_delay = 3.2
+    else:
+        base_delay = MIN_DELAY_BETWEEN_BATCHES
+    if is_openrouter() and slow_mode and progress_callback:
+        progress_callback(
+            f"⚠️ OpenRouter free giới hạn ~20 req/phút → tự đặt delay {base_delay:.1f}s/batch "
+            f"(~{int(60 / base_delay)} req/phút, an toàn)."
+        )
+    elif is_openrouter() and not slow_mode and progress_callback:
+        progress_callback(
+            f"⚠️ Đã tắt chế độ chậm OpenRouter — giữ delay {base_delay:.1f}s/batch. "
+            f"Có thể gặp rate limit 429 (tự retry + chờ)."
+        )
     
     for idx, batch in enumerate(batches):
         # Check abort
@@ -545,7 +538,8 @@ def process_large_word_list(
         
         # Check cache
         cached = _batch_cache_get(batch, lang, custom_instruction, existing_hash, grammar=grammar)
-        if cached is not None:
+        was_cache_hit = cached is not None
+        if was_cache_hit:
             if progress_callback:
                 label = "cấu trúc" if grammar else "từ"
                 progress_callback(f"  📦 Cache hit: {len(cached)} {label}")
@@ -558,47 +552,53 @@ def process_large_word_list(
                     new_count += 1
             if progress_callback:
                 progress_callback(f"  ✅ +{new_count} từ mới (sau lọc trùng)")
-            continue
         
-        # Gọi AI
-        try:
-            vocab_batch = _call_ai_for_batch(
-                batch, lang, existing_words or [], custom_instruction,
-                batch_num, total_batches, progress_callback, grammar=grammar
-            )
-             
-            # Lọc trùng
-            new_count = 0
-            for item in vocab_batch:
-                if not isinstance(item, dict):
-                    continue
-                front = (item.get("front") or item.get("simplified") or "").strip().lower()
-                if front and front not in seen_fronts and front not in existing_set:
-                    seen_fronts.add(front)
-                    all_vocab.append(item)
-                    new_count += 1
-             
-            if progress_callback:
-                label = "cấu trúc" if grammar else "từ"
-                progress_callback(f"  ✅ +{new_count} {label} mới (tổng: {len(all_vocab)})")
-             
-            # Cache kết quả
-            if vocab_batch:
-                _batch_cache_set(batch, lang, custom_instruction, existing_hash, vocab_batch, grammar=grammar)
-            
-        except Exception as e:
-            total_errors += 1
-            logger.warning("Batch %d error: %s", batch_num, e)
-            if progress_callback:
-                progress_callback(f"  ❌ Lỗi batch {batch_num}: {e}")
-            
-            # Nếu lỗi quá nhiều, dừng
-            if total_errors >= 3:
-                raise RuntimeError(f"❌ Quá nhiều lỗi ({total_errors} batch lỗi). Dừng xử lý.")
+        else:
+            # Gọi AI
+            try:
+                vocab_batch = _call_ai_for_batch(
+                    batch, lang, existing_words or [], custom_instruction,
+                    batch_num, total_batches, progress_callback, grammar=grammar
+                )
+                 
+                # Lọc trùng
+                new_count = 0
+                for item in vocab_batch:
+                    if not isinstance(item, dict):
+                        continue
+                    front = (item.get("front") or item.get("simplified") or "").strip().lower()
+                    if front and front not in seen_fronts and front not in existing_set:
+                        seen_fronts.add(front)
+                        all_vocab.append(item)
+                        new_count += 1
+                 
+                if progress_callback:
+                    label = "cấu trúc" if grammar else "từ"
+                    progress_callback(f"  ✅ +{new_count} {label} mới (tổng: {len(all_vocab)})")
+                 
+                # Cache kết quả
+                if vocab_batch:
+                    _batch_cache_set(batch, lang, custom_instruction, existing_hash, vocab_batch, grammar=grammar)
+                
+            except Exception as e:
+                total_errors += 1
+                logger.warning("Batch %d error: %s", batch_num, e)
+                if progress_callback:
+                    progress_callback(f"  ❌ Lỗi batch {batch_num}: {e}")
+                
+                # Nếu lỗi quá nhiều, dừng
+                if total_errors >= 3:
+                    raise RuntimeError(f"❌ Quá nhiều lỗi ({total_errors} batch lỗi). Dừng xử lý.")
         
-        # Rate limiting giữa các batch
-        if idx < total_batches - 1:
-            time.sleep(MIN_DELAY_BETWEEN_BATCHES)
+        # Rate limiting giữa các batch — CHỈ khi không phải cache hit (tiết kiệm thời gian)
+        # Dùng delay động: nếu đang bị rate limit (từ _http_post_json), tăng dần
+        if idx < total_batches - 1 and not was_cache_hit:
+            # Nếu _http_post_json đã tự tăng delay (gặp 429), dùng delay đó
+            current_delay = _get_rate_limit_delay()
+            delay = current_delay if current_delay > 0 else base_delay
+            if delay > base_delay and progress_callback:
+                progress_callback(f"⏳ Đang chờ {delay:.1f}s (rate limit đang hoạt động)...")
+            time.sleep(delay)
     
     # ── Step 5: Tổng kết ──────────────────────────────────
     if progress_callback:
@@ -723,12 +723,10 @@ Tên deck bằng tiếng Việt, ngắn gọn, dễ hiểu.
     
     if progress_callback:
         progress_callback("⏳ Đang chờ AI tổ chức deck...")
-    
-    req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
-    
+
     try:
-        with urllib.request.urlopen(req, timeout=300) as resp:
-            body = resp.read().decode("utf-8")
+        body = _http_post_json(url, payload, headers, timeout=300,
+                               progress_callback=progress_callback)
     except Exception as e:
         logger.warning("Deck organizer error: %s", e)
         # Fallback: tự tổ chức đơn giản

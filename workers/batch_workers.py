@@ -30,7 +30,7 @@ class BatchProcessThread(QThread):
     finished = pyqtSignal(list)           # vocab_list
     error = pyqtSignal(str)               # Error message
 
-    def __init__(self, raw_text, lang, custom_instruction="", existing_words=None, batch_size=40, grammar=False):
+    def __init__(self, raw_text, lang, custom_instruction="", existing_words=None, batch_size=40, grammar=False, slow_mode=False):
         super().__init__()
         self.raw_text = raw_text
         self.lang = lang
@@ -38,6 +38,7 @@ class BatchProcessThread(QThread):
         self.existing_words = existing_words or []
         self.batch_size = batch_size
         self.grammar = grammar
+        self.slow_mode = slow_mode
         self._is_running = True
 
     def run(self):
@@ -63,6 +64,7 @@ class BatchProcessThread(QThread):
                 progress_callback=lambda msg: self.progress.emit(msg),
                 should_abort=lambda: not self._is_running,
                 grammar=self.grammar,
+                slow_mode=self.slow_mode,
             )
 
             if not self._is_running:

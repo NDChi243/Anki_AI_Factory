@@ -62,7 +62,7 @@ def get_existing_vocab_from_deck(model_name: str, deck_id: int, front_field: str
             pass
 
     if cached_words is not None and cached_at > 0:
-        new_words = _query_anki_deck_incremental(model_name, front_field, cached_at)
+        new_words = _query_anki_deck_incremental(model_name, deck_id, front_field, cached_at)
         if new_words:
             existing_set = set(w.lower() for w in cached_words)
             added = 0
@@ -76,7 +76,7 @@ def get_existing_vocab_from_deck(model_name: str, deck_id: int, front_field: str
                 logger.info("Incremental deck scan: +%d new words (total: %d)", added, len(cached_words))
         words = cached_words
     else:
-        words = _query_anki_deck_full(model_name, front_field)
+        words = _query_anki_deck_full(model_name, deck_id, front_field)
 
     try:
         with open(cache_file, "w", encoding="utf-8") as f:
@@ -112,28 +112,77 @@ def make_existing_hash(existing_words: List[str]) -> str:
 
 
 # ═══════════════════════════════════════════════════════════
-#  INTERNAL: Anki queries
+#  INTERNAL: Anki queries (batch — tránh N+1 query)
 # ═══════════════════════════════════════════════════════════
 
-def _query_anki_deck_full(model_name: str, front_field: str) -> List[str]:
-    """Full scan toàn bộ notes của model."""
+def _query_anki_deck_full(model_name: str, deck_id: int, front_field: str) -> List[str]:
+    """Full scan toàn bộ notes của model trong deck (batch query, không N+1)."""
     try:
         from aqt import mw
+        # Lấy note_ids theo model + deck (dùng SQL trực tiếp để lọc deck hiệu quả)
         note_ids = mw.col.find_notes(f'"note:{model_name}"')
         if not note_ids:
             return []
 
+        # Lọc theo deck_id nếu có (chỉ lấy notes thuộc deck này)
+        if deck_id:
+            try:
+                # Lấy tất cả note_ids thuộc deck (bao gồm subdecks)
+                deck_note_ids = set()
+                for did in mw.col.decks.deck_and_child_ids(deck_id):
+                    deck_note_ids.update(
+                        mw.col.db.list("SELECT id FROM cards WHERE did = ?", did)
+                    )
+                note_ids = [nid for nid in note_ids if nid in deck_note_ids]
+            except Exception:
+                pass  # Fallback: không lọc theo deck
+
+        if not note_ids:
+            return []
+
+        # Batch query: lấy tất cả notes một lần (tránh N+1)
         words = set()
         batch_size = 200
         for i in range(0, len(note_ids), batch_size):
-            for nid in note_ids[i:i + batch_size]:
-                try:
-                    note = mw.col.get_note(nid)
-                    front = str(note.get(front_field, "")).strip().lower()
-                    if front:
-                        words.add(front)
-                except Exception:
-                    continue
+            batch = note_ids[i:i + batch_size]
+            # Query SQL trực tiếp để lấy field value (nhanh hơn get_note từng cái)
+            try:
+                placeholders = ",".join("?" * len(batch))
+                rows = mw.col.db.all(
+                    f"SELECT flds FROM notes WHERE id IN ({placeholders})", *batch
+                )
+                for row in rows:
+                    if not row or not row[0]:
+                        continue
+                    # flds format: field1\x1ffield2\x1f...
+                    fields = row[0].split("\x1f")
+                    # Tìm field index từ model
+                    if not hasattr(_query_anki_deck_full, "_field_idx"):
+                        _query_anki_deck_full._field_idx = {}
+                    key = f"{model_name}|{front_field}"
+                    if key not in _query_anki_deck_full._field_idx:
+                        model = mw.col.models.by_name(model_name)
+                        if model:
+                            idx = next((i for i, f in enumerate(model["flds"]) if f["name"] == front_field), 0)
+                        else:
+                            idx = 0
+                        _query_anki_deck_full._field_idx[key] = idx
+                    idx = _query_anki_deck_full._field_idx[key]
+                    if idx < len(fields):
+                        front = fields[idx].strip().lower()
+                        if front:
+                            words.add(front)
+            except Exception:
+                # Fallback: dùng get_note từng cái
+                for nid in batch:
+                    try:
+                        note = mw.col.get_note(nid)
+                        front = str(note.get(front_field, "")).strip().lower()
+                        if front:
+                            words.add(front)
+                    except Exception:
+                        continue
+
         logger.info("Full deck scan: %d notes → %d unique words", len(note_ids), len(words))
         return sorted(words)
     except Exception as e:
@@ -141,8 +190,8 @@ def _query_anki_deck_full(model_name: str, front_field: str) -> List[str]:
         return []
 
 
-def _query_anki_deck_incremental(model_name: str, front_field: str, since_timestamp: float) -> List[str]:
-    """Chỉ query notes được sửa đổi từ since_timestamp."""
+def _query_anki_deck_incremental(model_name: str, deck_id: int, front_field: str, since_timestamp: float) -> List[str]:
+    """Chỉ query notes được sửa đổi từ since_timestamp (batch query)."""
     try:
         from aqt import mw
         since_ms = int(since_timestamp * 1000)
@@ -150,15 +199,59 @@ def _query_anki_deck_incremental(model_name: str, front_field: str, since_timest
         if not note_ids:
             return []
 
-        words = []
-        for nid in note_ids:
+        # Lọc theo deck_id nếu có
+        if deck_id:
             try:
-                note = mw.col.get_note(nid)
-                front = str(note.get(front_field, "")).strip().lower()
-                if front:
-                    words.append(front)
+                deck_note_ids = set()
+                for did in mw.col.decks.deck_and_child_ids(deck_id):
+                    deck_note_ids.update(
+                        mw.col.db.list("SELECT id FROM cards WHERE did = ?", did)
+                    )
+                note_ids = [nid for nid in note_ids if nid in deck_note_ids]
             except Exception:
-                continue
+                pass
+
+        if not note_ids:
+            return []
+
+        # Batch query
+        words = []
+        batch_size = 200
+        for i in range(0, len(note_ids), batch_size):
+            batch = note_ids[i:i + batch_size]
+            try:
+                placeholders = ",".join("?" * len(batch))
+                rows = mw.col.db.all(
+                    f"SELECT flds FROM notes WHERE id IN ({placeholders})", *batch
+                )
+                for row in rows:
+                    if not row or not row[0]:
+                        continue
+                    fields = row[0].split("\x1f")
+                    if not hasattr(_query_anki_deck_incremental, "_field_idx"):
+                        _query_anki_deck_incremental._field_idx = {}
+                    key = f"{model_name}|{front_field}"
+                    if key not in _query_anki_deck_incremental._field_idx:
+                        model = mw.col.models.by_name(model_name)
+                        if model:
+                            idx = next((i for i, f in enumerate(model["flds"]) if f["name"] == front_field), 0)
+                        else:
+                            idx = 0
+                        _query_anki_deck_incremental._field_idx[key] = idx
+                    idx = _query_anki_deck_incremental._field_idx[key]
+                    if idx < len(fields):
+                        front = fields[idx].strip().lower()
+                        if front:
+                            words.append(front)
+            except Exception:
+                for nid in batch:
+                    try:
+                        note = mw.col.get_note(nid)
+                        front = str(note.get(front_field, "")).strip().lower()
+                        if front:
+                            words.append(front)
+                    except Exception:
+                        continue
         return words
     except Exception as e:
         logger.warning("Lỗi incremental deck scan: %s", e)
