@@ -8,6 +8,8 @@ Hỗ trợ:
 """
 
 import os
+import re
+import html
 import hashlib
 import threading
 import urllib.request
@@ -99,12 +101,32 @@ def _get_media_dir() -> str:
     return mw.col.media.dir()
 
 
+_HTML_TAG_RE = re.compile(r"<[^>]+>")
+
+
+def _strip_html(text: str) -> str:
+    """Loại bỏ thẻ HTML (vd <b>…</b> dùng để highlight pattern) trước khi TTS.
+
+    Giữ nguyên nội dung bên trong thẻ — chỉ bỏ tag + decode entity HTML
+    (< & ...) để giọng đọc không phát âm "b"/"pi" ở cuối câu ví dụ.
+    """
+    if not text:
+        return text
+    cleaned = _HTML_TAG_RE.sub("", text)
+    cleaned = html.unescape(cleaned)
+    return cleaned.strip()
+
+
 # ═══════════════════════════════════════════════════════════
 #  Edge TTS Provider
 # ═══════════════════════════════════════════════════════════
 def get_audio_edge_tts(text: str, voice: str, lang: str = "ja", rate: str = None) -> Optional[str]:
     """Tạo audio sử dụng Edge TTS. rate: edge-tts rate string như '+0%', '-50%', '+100%'"""
     if not text or not text.strip():
+        return ""
+
+    text = _strip_html(text)
+    if not text:
         return ""
 
     rate_suffix = f"_{rate}" if rate else ""
@@ -159,6 +181,10 @@ def get_audio_gtts(text: str, lang: str = "ja") -> Optional[str]:
     if not text or not text.strip():
         return ""
 
+    text = _strip_html(text)
+    if not text:
+        return ""
+
     filename = f"anki_gtts_{hashlib.md5(f'{lang}_{text}'.encode('utf-8')).hexdigest()}.mp3"
     try:
         media_dir = _get_media_dir()
@@ -192,6 +218,10 @@ def get_audio_gtts(text: str, lang: str = "ja") -> Optional[str]:
 def get_audio_voicevox(text: str, speaker_id: int = 3) -> Optional[str]:
     """Tạo audio tiếng Nhật sử dụng VoiceVox (local API)"""
     if not text or not text.strip():
+        return ""
+
+    text = _strip_html(text)
+    if not text:
         return ""
 
     cache_key = f"{text}_{speaker_id}"

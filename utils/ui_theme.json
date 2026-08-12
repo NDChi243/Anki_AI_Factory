@@ -1,6 +1,6 @@
 {
-  "preset": "glass_light",
-  "accent": "#005500",
+  "preset": "midnight",
+  "accent": "#6aa7ff",
   "glass_alpha": 4,
   "font_size": 11,
   "radius": 8

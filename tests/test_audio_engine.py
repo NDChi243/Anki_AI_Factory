@@ -36,6 +36,22 @@ def get_voice_options(lang: str) -> list:
     return VOICE_OPTIONS.get(lang, [])
 
 
+# === Copy of _strip_html from audio/tts.py (pure function) ===
+import re as _re
+import html as _html
+
+_HTML_TAG_RE = _re.compile(r"<[^>]+>")
+
+
+def _strip_html(text: str) -> str:
+    """Loai bo the HTML (vd <b>...</b> dung de highlight pattern) truoc khi TTS."""
+    if not text:
+        return text
+    cleaned = _HTML_TAG_RE.sub("", text)
+    cleaned = _html.unescape(cleaned)
+    return cleaned.strip()
+
+
 # === TESTS ===
 
 class TestSpeedToEdgeRate:
@@ -97,3 +113,26 @@ class TestVoiceOptions:
     def test_unknown_language(self):
         assert get_voice_options("fr") == []
         assert get_voice_options("") == []
+
+
+class TestStripHtml:
+    """Tests for HTML tag stripping before TTS (fix "pi" voice bug)."""
+
+    def test_removes_bold_tags(self):
+        assert _strip_html("ここで写真を撮<b>ってもいい</b>ですか。") == "ここで写真を撮ってもいいですか。"
+
+    def test_removes_tags_keeps_content(self):
+        assert _strip_html("他<b>把</b>作业做完了。") == "他把作业做完了。"
+
+    def test_decodes_entities(self):
+        assert _strip_html("a \u0026lt;test\u0026gt; b") == "a <test> b"
+
+    def test_empty_string(self):
+        assert _strip_html("") == ""
+        assert _strip_html(None) is None
+
+    def test_no_html_unchanged(self):
+        assert _strip_html("毎日ご飯を食べる。") == "毎日ご飯を食べる。"
+
+    def test_strips_whitespace(self):
+        assert _strip_html("  text  ") == "text"
