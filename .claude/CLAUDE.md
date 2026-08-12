@@ -61,9 +61,10 @@ __init__.py (2,0xx dòng)       ← AnkiSmartFactory QDialog (MAIN)
 - `vocab` = chế độ Từ vựng; `grammar` = chế độ Ngữ pháp (Note Type riêng).
 - `lang` = `"japanese"` | `"chinese"` | `"korean"`.
 - Model names: `"AnkiTool Japanese/Chinese/Korean [Grammar] V17.0 (Add-on)"`.
-- Entry: `start_smart_factory()` (`__init__.py:1892`), shortcut `Ctrl+Shift+I`.
-- Version hiện tại: **17.0.0** (`manifest.json`).
+- Entry: `start_smart_factory()` (`__init__.py:2430`), shortcut `Ctrl+Shift+I`.
+- Version hiện tại: **17.1.0** (`manifest.json`).
 - **Combo mode**: mỗi từ = 1 card duy nhất, 5 chế độ (qa/vn/wb/pron/lg) chuyển đổi trong card qua `_COMBO_MODE_JS`; mode lưu `mw.col.conf["ai_factory_study_mode"]`; Overview patch qua `hooks/overview_mode.py`.
+- **Prompt/Schema/Field Map/Card Render có thể GHI ĐÈ ngoài**: `utils/ai_prompts.json` (gitignored) qua `utils/prompt_config.py` + `mode/card_render.py` — xem skill 02 (ai-extraction) và 08 (card-templates).
 
 ---
 

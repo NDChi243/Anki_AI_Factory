@@ -27,7 +27,7 @@ for _n in ("QDialog", "QVBoxLayout", "QHBoxLayout", "QGridLayout", "QFormLayout"
            "QLabel", "QPushButton", "QTreeWidget", "QTreeWidgetItem",
            "QInputDialog", "QMessageBox", "QMenu", "QComboBox", "QPlainTextEdit",
            "QLineEdit", "QCheckBox", "QGroupBox", "QSpinBox", "QProgressBar",
-           "QTextEdit", "QListWidget", "QWidget", "QTimer", "QAction",
+           "QTextEdit", "QListWidget", "QListWidgetItem", "QWidget", "QTimer", "QAction",
            "QApplication", "QFileDialog", "QColorDialog", "QDoubleSpinBox",
            "QSlider", "QTableWidget", "QTableWidgetItem", "QScrollArea",
            "QTextBrowser", "QAbstractItemView"):

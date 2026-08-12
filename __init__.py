@@ -29,6 +29,7 @@ _STATE_PATH = os.path.join(_addon_root, "utils", "factory_state.json")
 # ═══════════════════════════════════════════════════════════
 from Language import LANG_CONFIG, LANG_GRAMMAR_CONFIG, LANG_SELECTOR_INFO
 from mode import LANG_TEMPLATES, LANG_CSS, LANG_GRAMMAR_TEMPLATES, LANG_GRAMMAR_CSS
+from mode.card_render import build_qfmt as _build_qfmt, build_afmt as _build_afmt
 from audio.engine import get_voice_options, get_selected_voice, set_selected_voice, VOICE_SAMPLE
 from audio.engine import get_default_speed, set_default_speed
 from utils import safe_parse_json
@@ -123,9 +124,14 @@ class AnkiSmartFactory(QDialog):
             logger.warning("Lỗi init history: %s", e)
 
     def _cfg(self):
-        if getattr(self, '_is_grammar', False):
-            return LANG_GRAMMAR_CONFIG[self._current_lang]
-        return LANG_CONFIG[self._current_lang]
+        # Mức 1 (Field Map Editor): bơm json_field_map + all_fields HIỆU LỰC
+        # (defaults từ Language/*.py + ghi đè của người dùng trong ai_prompts.json)
+        # vào config → mọi nơi dùng self._cfg() đều tự có field mới.
+        from utils.prompt_config import apply_field_map_to_cfg
+        is_grammar = bool(getattr(self, '_is_grammar', False))
+        base = (LANG_GRAMMAR_CONFIG if is_grammar else LANG_CONFIG)[self._current_lang]
+        kind = "grammar" if is_grammar else "vocab"
+        return apply_field_map_to_cfg(base, self._current_lang, kind)
 
     def _select_mode(self, is_grammar):
         """Chuyển chế độ Từ vựng ↔ Ngữ pháp (Note Type riêng)"""
@@ -170,18 +176,26 @@ class AnkiSmartFactory(QDialog):
         return self._current_lang, mode
 
     def _save_current_flow(self):
-        """Lưu text + file paths của luồng đang hiển thị (gọi TRƯỚC khi đổi ngôn ngữ/mode/đóng)."""
+        """Lưu text + file paths + thẻ trong xưởng (raw_data/prepared_data/JSON) của luồng
+        đang hiển thị (gọi TRƯỚC khi đổi ngôn ngữ/mode/đóng)."""
         try:
             lang, mode = self._flow_key()
             flow = self._factory_state.setdefault(lang, {}).setdefault(mode, {})
             flow["text"] = self.ai_text_input.toPlainText()
             flow["files"] = list(getattr(self, '_ai_attached_paths', []))
+            # Lưu thẻ chờ xuất xưởng để KHÔNG bị mất khi đóng Factory
+            flow["raw"] = [d for d in getattr(self, 'raw_data', []) if isinstance(d, dict)]
+            flow["cards"] = [d for d in getattr(self, 'prepared_data', []) if isinstance(d, dict)]
+            try:
+                flow["json"] = self.json_input.toPlainText()
+            except Exception:
+                pass
             self._save_factory_state()
         except Exception as e:
             logger.warning("Lỗi lưu flow state: %s", e)
 
     def _restore_current_flow(self):
-        """Khôi phục text + file kẹp cho luồng đang hiển thị (gọi SAU khi setup UI)."""
+        """Khôi phục text + file kẹp + thẻ trong xưởng cho luồng đang hiển thị (gọi SAU khi setup UI)."""
         try:
             lang, mode = self._flow_key()
             flow = self._factory_state.get(lang, {}).get(mode, {})
@@ -200,6 +214,24 @@ class AnkiSmartFactory(QDialog):
                 except Exception:
                     pass
             self._update_ai_files_label()
+            # Khôi phục thẻ chờ xuất xưởng (chỉ khi UI đã dựng xong)
+            self.raw_data = [d for d in flow.get("raw", []) if isinstance(d, dict)]
+            self.prepared_data = [d for d in flow.get("cards", []) if isinstance(d, dict)]
+            if hasattr(self, 'lbl_raw'):
+                self.lbl_raw.setText(f"📊 Kho hàng: {len(self.raw_data)} mục")
+            if hasattr(self, 'json_input'):
+                try:
+                    self.json_input.blockSignals(True)
+                    self.json_input.setPlainText(flow.get("json", ""))
+                    self.json_input.blockSignals(False)
+                except Exception:
+                    pass
+            if hasattr(self, 'txt_search'):
+                self._rebuild_preview()
+                self.btn_import.setEnabled(len(self.prepared_data) > 0)
+                self.btn_cancel_order.setEnabled(len(self.prepared_data) > 0)
+                if self.prepared_data:
+                    self.lbl_ready.setText(f"✅ Sẵn sàng: {len(self.prepared_data)} thẻ")
         except Exception as e:
             logger.warning("Lỗi khôi phục flow state: %s", e)
 
@@ -324,6 +356,14 @@ class AnkiSmartFactory(QDialog):
         self.btn_sample.setProperty("class", "ghost")
         self.btn_sample.clicked.connect(self._show_sample_json)
         bar2.addWidget(self.btn_sample)
+        self.btn_history = QPushButton("📚 Lịch Sử AI")
+        self.btn_history.setProperty("class", "ghost")
+        self.btn_history.setToolTip(
+            "Xem lại lịch sử từ vựng đã lưu (AI trích xuất / import) — xem được ngay cả sau khi đóng Factory.\n"
+            "Tích chọn các từ cần và bấm 'Đưa Vào Xưởng' để Kiểm Định & xuất xưởng lại."
+        )
+        self.btn_history.clicked.connect(self._open_history_browser)
+        bar2.addWidget(self.btn_history)
         bar2.addStretch()
         left.addLayout(bar2)
 
@@ -559,19 +599,55 @@ class AnkiSmartFactory(QDialog):
 
         right.addWidget(QLabel("📋 Thẻ chờ xuất xưởng (✨ New | 🔄 Update | ⚠️ Trùng mờ):"))
 
+        # ── Tìm kiếm + lọc nhanh theo loại thẻ ──
+        sf = QHBoxLayout()
+        self.txt_search = QLineEdit()
+        self.txt_search.setPlaceholderText("🔍 Tìm theo từ / nghĩa... (lọc trực tiếp)")
+        self.txt_search.textChanged.connect(self._rebuild_preview)
+        sf.addWidget(self.txt_search, 1)
+        self.cbo_filter = QComboBox()
+        self.cbo_filter.addItems(["📂 Tất cả", "✨ Mới", "🔄 Cập nhật", "⚠️ Trùng mờ", "🔍 Nghĩa khác"])
+        self.cbo_filter.setToolTip("Lọc nhanh theo loại thẻ sau khi Kiểm Định")
+        self.cbo_filter.currentIndexChanged.connect(self._rebuild_preview)
+        sf.addWidget(self.cbo_filter, 0)
+        right.addLayout(sf)
+
         self.preview_list = QListWidget()
         self.preview_list.setMinimumHeight(120)  # thích ứng theo kích thước kéo thả
+        self.preview_list.itemChanged.connect(self._update_selection_label)
         right.addWidget(self.preview_list)
+
+        # ── Nút chọn nhanh + số thẻ đã chọn ──
+        sel = QHBoxLayout()
+        self.btn_select_all = QPushButton("✅ Chọn Tất Cả")
+        self.btn_select_all.setToolTip("Tích chọn tất cả thẻ đang hiển thị (theo bộ lọc)")
+        self.btn_select_all.clicked.connect(self._select_all_visible)
+        sel.addWidget(self.btn_select_all)
+        self.btn_select_none = QPushButton("☐ Bỏ Chọn")
+        self.btn_select_none.setToolTip("Bỏ chọn tất cả thẻ đang hiển thị")
+        self.btn_select_none.clicked.connect(self._select_none_visible)
+        sel.addWidget(self.btn_select_none)
+        sel.addStretch()
+        self.lbl_sel = QLabel("☑️ Đã chọn: 0/0 thẻ")
+        self.lbl_sel.setStyleSheet("color:#2980b9;font-weight:bold;")
+        sel.addWidget(self.lbl_sel)
+        right.addLayout(sel)
 
         rng = QHBoxLayout()
         self.spin_start = QSpinBox()
         self.spin_start.setRange(1, 9999)
+        self.spin_start.setToolTip("Thay đổi khoảng sẽ TỰ ĐỘNG tích chọn các thẻ trong khoảng đó")
+        self.spin_start.valueChanged.connect(self._on_range_changed)
         self.spin_end = QSpinBox()
         self.spin_end.setRange(1, 9999)
-        rng.addWidget(QLabel("🔢 Từ:"))
+        self.spin_end.setToolTip("Thay đổi khoảng sẽ TỰ ĐỘNG tích chọn các thẻ trong khoảng đó")
+        self.spin_end.valueChanged.connect(self._on_range_changed)
+        rng.addWidget(QLabel("🔢 Từ số:"))
         rng.addWidget(self.spin_start)
         rng.addWidget(QLabel("đến:"))
         rng.addWidget(self.spin_end)
+        rng.addWidget(QLabel("(đổi khoảng = tự tích chọn)"))
+        rng.addStretch()
         right.addLayout(rng)
 
         self.lbl_ready = QLabel("✅ Sẵn sàng: 0 thẻ")
@@ -593,11 +669,23 @@ class AnkiSmartFactory(QDialog):
         self.btn_import.clicked.connect(self._process_import)
         right.addWidget(self.btn_import)
 
+        op_row = QHBoxLayout()
         self.btn_cancel = QPushButton("⏹️ DỪNG LẠI")
         self.btn_cancel.setProperty("class", "danger")
         self.btn_cancel.setVisible(False)
         self.btn_cancel.clicked.connect(self._cancel_import)
-        right.addWidget(self.btn_cancel)
+        op_row.addWidget(self.btn_cancel)
+        self.btn_cancel_order = QPushButton("🧹 Hủy Hàng (Xóa Thẻ Trong Xưởng)")
+        self.btn_cancel_order.setProperty("class", "danger")
+        self.btn_cancel_order.setMinimumHeight(40)
+        self.btn_cancel_order.setEnabled(False)
+        self.btn_cancel_order.setToolTip(
+            "Chỉ xóa thẻ KHỎI XƯỞNG (danh sách chờ xuất xưởng) — không ảnh hưởng tới Anki.\n"
+            "Thẻ trong xưởng được lưu lại ngay cả khi đóng cửa sổ; chỉ mất khi bấm Hủy Hàng."
+        )
+        self.btn_cancel_order.clicked.connect(self._cancel_order)
+        op_row.addWidget(self.btn_cancel_order)
+        right.addLayout(op_row)
 
         self.main_splitter.addWidget(right_panel)
         self.main_splitter.setStretchFactor(0, 5)
@@ -1169,37 +1257,229 @@ class AnkiSmartFactory(QDialog):
                 cnt["new"] += 1
             self._add_to_queue(item, action, target_nid, updatable, cnt, conflict_info)
 
-        self.spin_start.setValue(1)
-        self.spin_end.setValue(len(self.prepared_data))
-        self.btn_import.setEnabled(len(self.prepared_data) > 0)
         self.btn_diff_meaning.setEnabled(cnt["dup_diff"] > 0)
         self.lbl_ready.setText(
             f"✨ {cnt['new']} mới   🔄 {cnt['update']} cập nhật   "
             f"⚠️ {cnt['partial']} trùng mờ   🔍 {cnt['dup_diff']} nghĩa khác   ❌ {cnt['dup']} bỏ qua"
         )
+        # Dựng lại danh sách thẻ chờ xuất xưởng (có tìm kiếm + lọc + checkbox)
+        self._rebuild_preview()
 
     def _add_to_queue(self, item, action, nid, updatable, cnt, conflict_info=None):
+        """Thêm thẻ vào hàng chờ xuất xưởng (prepared_data).
+        Danh sách hiển thị được dựng lại ở cuối _verify_batch_impl qua _rebuild_preview()."""
         self.prepared_data.append({
             "item": item, "action": action,
             "nid": nid, "update_fields": updatable,
             "conflict_info": conflict_info,
         })
-        idx = len(self.prepared_data)
-        icon = {"add": "✨", "add_partial": "⚠️", "update": "🔄", "dup_diff": "🔍"}.get(action, "✨")
+
+    # ═══════════════════════════════════════════════════════
+    #  TÌM KIẾM / LỌC / CHỌN THẺ CHỜ XUẤT XƯỞNG
+    # ═══════════════════════════════════════════════════════
+    def _rebuild_preview(self):
+        """Dựng lại danh sách thẻ chờ xuất xưởng theo tìm kiếm + bộ lọc.
+        Mỗi dòng: checkbox + số thứ tự (theo danh sách đang hiển thị) + từ + nghĩa + ghi chú."""
+        search = self.txt_search.text().strip().lower()
+        filt = self.cbo_filter.currentText()
+        action_map = {
+            "📂 Tất cả": None,
+            "✨ Mới": "add",
+            "🔄 Cập nhật": "update",
+            "⚠️ Trùng mờ": "add_partial",
+            "🔍 Nghĩa khác": "dup_diff",
+        }
+        want_action = action_map.get(filt)
         cfg = self._cfg()
         dk = cfg["detect_key"]
-        front = str(item.get(dk, item.get('front', ''))).strip()
-        if action == "dup_diff" and conflict_info:
-            suffix = f"  [🔍 Nghĩa khác: mới='{item.get('meaning','')}' ← cũ='{conflict_info['existing_meaning']}']"
-        elif action == "update" and updatable:
-            suffix = f"  [Cập nhật: {', '.join(updatable)}]"
-        elif action == "add_partial":
-            suffix = "  [Trùng mờ — vẫn thêm]"
-        else:
-            suffix = ""
-        self.preview_list.addItem(
-            f"{icon} {idx}: {front} — {item.get('meaning','')}{suffix}"
+
+        # Lưu trạng thái check theo index để giữ qua mỗi lần dựng lại
+        checked = set()
+        for row in range(self.preview_list.count()):
+            it = self.preview_list.item(row)
+            if it.checkState() == Qt.CheckState.Checked:
+                idx = it.data(Qt.ItemDataRole.UserRole)
+                if idx is not None:
+                    checked.add(idx)
+
+        self._visible_indices = []
+        for i, d in enumerate(self.prepared_data):
+            item = d["item"]
+            action = d["action"]
+            front = str(item.get(dk, item.get('front', ''))).strip()
+            meaning = str(item.get('meaning', '')).strip()
+            if want_action and action != want_action:
+                continue
+            if search and search not in front.lower() and search not in meaning.lower():
+                continue
+            self._visible_indices.append(i)
+
+        self.preview_list.blockSignals(True)
+        self.preview_list.clear()
+        for pos, idx in enumerate(self._visible_indices, start=1):
+            d = self.prepared_data[idx]
+            item = d["item"]
+            action = d["action"]
+            updatable = d.get("update_fields", [])
+            ci = d.get("conflict_info")
+            front = str(item.get(dk, item.get('front', ''))).strip()
+            icon = {"add": "✨", "add_partial": "⚠️", "update": "🔄", "dup_diff": "🔍"}.get(action, "✨")
+            if action == "dup_diff" and ci:
+                suffix = f"  [🔍 Nghĩa khác: mới='{item.get('meaning','')}' ← cũ='{ci['existing_meaning']}']"
+            elif action == "update" and updatable:
+                suffix = f"  [Cập nhật: {', '.join(updatable)}]"
+            elif action == "add_partial":
+                suffix = "  [Trùng mờ — vẫn thêm]"
+            else:
+                suffix = ""
+            li = QListWidgetItem(f"{icon} {pos}: {front} — {item.get('meaning','')}{suffix}")
+            li.setFlags(li.flags() | Qt.ItemFlag.ItemIsUserCheckable)
+            li.setCheckState(Qt.CheckState.Checked if idx in checked else Qt.CheckState.Unchecked)
+            li.setData(Qt.ItemDataRole.UserRole, idx)
+            self.preview_list.addItem(li)
+        self.preview_list.blockSignals(False)
+
+        # Khóa khoảng số theo số thẻ đang hiển thị
+        # (bật cờ để không kích hoạt tự động tích chọn khi đang dựng lại danh sách)
+        self._updating_range = True
+        try:
+            vis_count = len(self._visible_indices)
+            if vis_count == 0:
+                self.spin_start.setRange(1, 1)
+                self.spin_end.setRange(1, 1)
+                self.spin_start.setValue(1)
+                self.spin_end.setValue(1)
+            else:
+                self.spin_start.setRange(1, vis_count)
+                self.spin_end.setRange(1, vis_count)
+                if self.spin_start.value() > vis_count:
+                    self.spin_start.setValue(vis_count)
+                if self.spin_end.value() > vis_count:
+                    self.spin_end.setValue(vis_count)
+                if self.spin_start.value() > self.spin_end.value():
+                    self.spin_end.setValue(self.spin_start.value())
+        finally:
+            self._updating_range = False
+
+        self.btn_import.setEnabled(len(self.prepared_data) > 0)
+        self.btn_cancel_order.setEnabled(len(self.prepared_data) > 0)
+        self._update_selection_label()
+
+    def _on_range_changed(self):
+        """Khi đổi khoảng 'Từ số … đến' → tự động tích chọn các thẻ trong khoảng đó."""
+        if getattr(self, '_updating_range', False):
+            return
+        if not hasattr(self, 'preview_list'):
+            return
+        start = self.spin_start.value()
+        end = self.spin_end.value()
+        self.preview_list.blockSignals(True)
+        for row in range(self.preview_list.count()):
+            checked = (start <= row + 1 <= end)
+            self.preview_list.item(row).setCheckState(
+                Qt.CheckState.Checked if checked else Qt.CheckState.Unchecked
+            )
+        self.preview_list.blockSignals(False)
+        self._update_selection_label()
+
+    def _update_selection_label(self):
+        """Cập nhật nhãn số thẻ đã chọn."""
+        if not hasattr(self, 'lbl_sel'):
+            return
+        n_checked = 0
+        for row in range(self.preview_list.count()):
+            if self.preview_list.item(row).checkState() == Qt.CheckState.Checked:
+                n_checked += 1
+        vis = len(getattr(self, '_visible_indices', []))
+        self.lbl_sel.setText(f"☑️ Đã chọn: {n_checked}/{vis} thẻ")
+
+    def _select_all_visible(self):
+        """Tích chọn tất cả thẻ đang hiển thị."""
+        self.preview_list.blockSignals(True)
+        for row in range(self.preview_list.count()):
+            self.preview_list.item(row).setCheckState(Qt.CheckState.Checked)
+        self.preview_list.blockSignals(False)
+        self._update_selection_label()
+
+    def _select_none_visible(self):
+        """Bỏ chọn tất cả thẻ đang hiển thị."""
+        self.preview_list.blockSignals(True)
+        for row in range(self.preview_list.count()):
+            self.preview_list.item(row).setCheckState(Qt.CheckState.Unchecked)
+        self.preview_list.blockSignals(False)
+        self._update_selection_label()
+
+    def _get_export_indices(self):
+        """Trả về các index (trong prepared_data) sẽ xuất xưởng.
+        Ưu tiên các thẻ được tích chọn; nếu không chọn thẻ nào → dùng khoảng Từ-đến
+        (theo danh sách đang hiển thị sau khi lọc)."""
+        visible = getattr(self, '_visible_indices', None)
+        if visible is None:
+            visible = list(range(len(self.prepared_data)))
+        checked = []
+        for row in range(self.preview_list.count()):
+            it = self.preview_list.item(row)
+            if it.checkState() == Qt.CheckState.Checked:
+                idx = it.data(Qt.ItemDataRole.UserRole)
+                if idx is not None:
+                    checked.append(idx)
+        if checked:
+            return sorted(set(checked))
+        start = max(1, self.spin_start.value()) - 1
+        end = min(len(visible), self.spin_end.value())
+        if end < start:
+            end = start
+        return visible[start:end]
+
+    def _remove_factory_indices(self, indices):
+        """Xóa các thẻ (theo index trong prepared_data) khỏi xưởng (prepared_data + raw_data),
+        rồi dựng lại danh sách và lưu trạng thái."""
+        indices = sorted(set(indices))
+        removed_items = []
+        for i in sorted(indices, reverse=True):
+            if 0 <= i < len(self.prepared_data):
+                removed_items.append(self.prepared_data[i]["item"])
+                del self.prepared_data[i]
+        for it in removed_items:
+            try:
+                self.raw_data.remove(it)
+            except ValueError:
+                pass
+        self.lbl_raw.setText(f"📊 Kho hàng: {len(self.raw_data)} mục")
+        self.lbl_ready.setText(f"✅ Sẵn sàng: {len(self.prepared_data)} thẻ")
+        self._rebuild_preview()
+        self._save_current_flow()
+
+    def _cancel_order(self):
+        """Hủy hàng: xóa toàn bộ hoặc xóa các thẻ đã chọn khỏi xưởng.
+        Thẻ chỉ bị xóa khi người dùng chủ động bấm nút này — không bị mất khi đóng cửa sổ."""
+        if not self.prepared_data:
+            tooltip("ℹ️ Xưởng trống — không có thẻ để hủy.")
+            return
+        export_indices = self._get_export_indices()
+        n_sel = len(export_indices)
+        box = QMessageBox(self)
+        box.setWindowTitle("🧹 Hủy Hàng")
+        box.setText(
+            f"Xưởng hiện có {len(self.prepared_data)} thẻ chờ xuất xưởng.\n\n"
+            f"☑️ Đã chọn: {n_sel} thẻ.\n\n"
+            "Chọn thao tác xóa — chỉ xóa khỏi XƯỞNG, không ảnh hưởng đến Anki:"
         )
+        btn_selected = box.addButton("🗑️ Xóa các thẻ đã chọn", QMessageBox.ButtonRole.ActionRole)
+        btn_all = box.addButton("🧹 Xóa toàn bộ", QMessageBox.ButtonRole.ActionRole)
+        btn_cancel = box.addButton("Hủy", QMessageBox.ButtonRole.RejectRole)
+        box.setDefaultButton(btn_cancel)
+        box.exec()
+        clicked = box.clickedButton()
+        if clicked == btn_selected:
+            if n_sel == 0:
+                tooltip("⚠️ Chưa chọn thẻ nào. Hãy tích chọn thẻ hoặc chỉnh khoảng Từ-đến.")
+                return
+            self._remove_factory_indices(export_indices)
+            self.lbl_status.setText(f"🗑️ Đã xóa {n_sel} thẻ đã chọn khỏi xưởng.")
+        elif clicked == btn_all:
+            self._remove_factory_indices(list(range(len(self.prepared_data))))
+            self.lbl_status.setText("🧹 Đã xóa toàn bộ thẻ trong xưởng.")
 
     def _show_diff_meaning_report(self):
         """Hiển thị dialog báo cáo các từ vựng có cùng mặt chữ nhưng khác nghĩa,
@@ -1209,38 +1489,12 @@ class AnkiSmartFactory(QDialog):
         if not changed:
             return
 
-        # Cập nhật lại preview_list sau khi module xử lý
-        dk = cfg["detect_key"]
-        self.preview_list.clear()
-        for i, d in enumerate(self.prepared_data):
-            item = d["item"]
-            action = d["action"]
-            updatable = d.get("update_fields", [])
-            ci = d.get("conflict_info")
-            front = str(item.get(dk, item.get('front', ''))).strip()
-            icon = {"add": "✨", "add_partial": "⚠️", "update": "🔄", "dup_diff": "🔍"}.get(action, "✨")
-
-            if action == "dup_diff" and ci:
-                suffix = f"  [🔍 Nghĩa khác: mới='{item.get('meaning','')}' ← cũ='{ci['existing_meaning']}']"
-            elif action == "update" and updatable:
-                suffix = f"  [Cập nhật: {', '.join(updatable)}]"
-            elif action == "add_partial":
-                suffix = "  [Trùng mờ — vẫn thêm]"
-            else:
-                suffix = ""
-
-            self.preview_list.addItem(
-                f"{icon} {i+1}: {front} — {item.get('meaning','')}{suffix}"
-            )
-
-        # Cập nhật label và nút
-        self.spin_start.setValue(1)
-        self.spin_end.setValue(len(self.prepared_data))
-        self.btn_import.setEnabled(len(self.prepared_data) > 0)
-
         # Đếm lại
         remaining_dup_diff = sum(1 for d in self.prepared_data if d["action"] == "dup_diff")
         self.btn_diff_meaning.setEnabled(remaining_dup_diff > 0)
+        self.lbl_ready.setText(f"✅ Sẵn sàng: {len(self.prepared_data)} thẻ")
+        # Dựng lại danh sách theo bộ lọc/tìm kiếm hiện tại
+        self._rebuild_preview()
 
     def _find_updatable_fields(self, note, item):
         cfg = self._cfg()
@@ -1273,9 +1527,14 @@ class AnkiSmartFactory(QDialog):
         if not self.prepared_data:
             return
 
-        batch = self.prepared_data[self.spin_start.value()-1 : self.spin_end.value()]
+        export_indices = self._get_export_indices()
+        batch = [self.prepared_data[i] for i in export_indices]
         if not batch:
+            tooltip("⚠️ Không có thẻ nào được chọn để xuất xưởng.")
             return
+
+        # Lưu lại các index đã xuất để cập nhật lại xưởng sau khi import xong
+        self._last_export_indices = list(export_indices)
 
         mw.checkpoint("Anki V16 Import")
         cfg = self._cfg()
@@ -1312,13 +1571,16 @@ class AnkiSmartFactory(QDialog):
         self.btn_import.setEnabled(True)
         self.lbl_status.setText("✅ Hoàn tất!")
 
+        idxs = sorted(set(getattr(self, '_last_export_indices', None) or []))
         # Ghi nhận vào lịch sử import
-        if report.get('added', 0) > 0:
-            try:
-                deck_name = self.deck_chooser.currentText()
-                # Lấy các mục đã import từ prepared_data
-                batch = self.prepared_data[self.spin_start.value()-1 : self.spin_end.value()]
-                imported_items = [d["item"] for d in batch if d["action"] in ("add", "add_partial")]
+        try:
+            deck_name = self.deck_chooser.currentText()
+            if report.get('added', 0) > 0:
+                imported_items = [
+                    self.prepared_data[i]["item"] for i in idxs
+                    if 0 <= i < len(self.prepared_data)
+                    and self.prepared_data[i]["action"] in ("add", "add_partial")
+                ]
                 if imported_items:
                     add_to_import_history(
                         imported_items,
@@ -1327,8 +1589,12 @@ class AnkiSmartFactory(QDialog):
                         source="manual",
                     )
                 invalidate_deck_cache()
-            except Exception as e:
-                logger.warning("Lỗi ghi lịch sử import: %s", e)
+        except Exception as e:
+            logger.warning("Lỗi ghi lịch sử import: %s", e)
+
+        # Cập nhật lại xưởng: xóa các thẻ đã xuất xưởng → danh sách giảm dần
+        self._last_export_indices = None
+        self._remove_factory_indices(idxs)
 
         msg = (
             f"🚀 XUẤT XƯỞNG V17.0 THÀNH CÔNG! [{self._cfg()['label']}]\n"
@@ -1350,6 +1616,8 @@ class AnkiSmartFactory(QDialog):
         self.btn_import.setEnabled(True)
         self.btn_cancel.setVisible(False)
         self.pbar.setVisible(False)
+        # Không xóa thẻ khỏi xưởng khi import lỗi
+        self._last_export_indices = None
 
     def _cancel_import(self):
         if self.import_worker and self.import_worker.isRunning():
@@ -1409,12 +1677,13 @@ class AnkiSmartFactory(QDialog):
             _ensure_fields(self._collect_template_fields(tmpls))
             for i in range(tmpl_count):
                 if i < len(m['tmpls']):
-                    m['tmpls'][i]['qfmt'] = tmpls[i * 2]()
-                    m['tmpls'][i]['afmt'] = tmpls[i * 2 + 1]()
+                    # Mức 2: build_qfmt/build_afmt tự APPEND field tuỳ chỉnh (custom fields)
+                    m['tmpls'][i]['qfmt'] = _build_qfmt(cfg, tmpls, i * 2)
+                    m['tmpls'][i]['afmt'] = _build_afmt(cfg, tmpls, i * 2 + 1)
                 else:
                     t = mm.new_template(cfg["template_names"][i])
-                    t['qfmt'] = tmpls[i * 2]()
-                    t['afmt'] = tmpls[i * 2 + 1]()
+                    t['qfmt'] = _build_qfmt(cfg, tmpls, i * 2)
+                    t['afmt'] = _build_afmt(cfg, tmpls, i * 2 + 1)
                     mm.add_template(m, t)
             # Remove extra templates if model has more than needed
             had_extra = len(m['tmpls']) > tmpl_count
@@ -1499,12 +1768,13 @@ class AnkiSmartFactory(QDialog):
             had_extra = len(m['tmpls']) > tmpl_count
             for i in range(tmpl_count):
                 if i < len(m['tmpls']):
-                    m['tmpls'][i]['qfmt'] = tmpls[i * 2]()
-                    m['tmpls'][i]['afmt'] = tmpls[i * 2 + 1]()
+                    # Mức 2: build_qfmt/build_afmt tự APPEND field tuỳ chỉnh (custom fields)
+                    m['tmpls'][i]['qfmt'] = _build_qfmt(cfg, tmpls, i * 2)
+                    m['tmpls'][i]['afmt'] = _build_afmt(cfg, tmpls, i * 2 + 1)
                 else:
                     t = mm.new_template(cfg["template_names"][i])
-                    t['qfmt'] = tmpls[i * 2]()
-                    t['afmt'] = tmpls[i * 2 + 1]()
+                    t['qfmt'] = _build_qfmt(cfg, tmpls, i * 2)
+                    t['afmt'] = _build_afmt(cfg, tmpls, i * 2 + 1)
                     mm.add_template(m, t)
             # Migration combo: đổi tên template đầu thành "Tổng hợp (5 chế độ)"
             if had_extra and not self._is_grammar and len(cfg["template_names"]) > 0:
@@ -1526,8 +1796,8 @@ class AnkiSmartFactory(QDialog):
             mm.add_field(m, mm.new_field(fn))
         for i in range(tmpl_count):
             t = mm.new_template(cfg["template_names"][i])
-            t['qfmt'] = tmpls[i * 2]()
-            t['afmt'] = tmpls[i * 2 + 1]()
+            t['qfmt'] = _build_qfmt(cfg, tmpls, i * 2)
+            t['afmt'] = _build_afmt(cfg, tmpls, i * 2 + 1)
             mm.add_template(m, t)
         m['css'] = css
         mm.add(m)
@@ -2117,6 +2387,34 @@ class AnkiSmartFactory(QDialog):
             f"📊 Đã đổ {len(final_list)} từ vựng vào khung JSON.\n"
             f"👉 Nhấn <b>'Kiểm Định Lô Hàng'</b> để kiểm tra và import."
         )
+
+    # ═══════════════════════════════════════════════════════
+    #  LỊCH SỬ AI — Xem lại & đưa vào xưởng để import lại
+    # ═══════════════════════════════════════════════════════
+    def _open_history_browser(self):
+        """Mở dialog xem lịch sử từ vựng đã lưu (AI/import) và đưa lại vào xưởng."""
+        from ui.history_dialog import HistoryBrowserDialog
+
+        dlg = HistoryBrowserDialog(parent=self, current_lang=self._current_lang)
+        if dlg.exec() == QDialog.DialogCode.Accepted and dlg.accepted_items:
+            self._load_history_to_factory(dlg.accepted_lang, dlg.accepted_items)
+
+    def _load_history_to_factory(self, lang, items):
+        """Đưa các từ đã chọn từ lịch sử vào xưởng (json_input + kho hàng) để kiểm định lại."""
+        if not items:
+            return
+        if lang and lang in ("japanese", "chinese", "korean") and lang != self._current_lang:
+            self._current_lang = lang
+            self._on_lang_changed()
+        json_str = json.dumps(items, indent=2, ensure_ascii=False)
+        self.json_input.setPlainText(json_str)
+        self._analyze_content()
+        # Đảm bảo kho hàng đúng theo item đã chọn (an toàn nếu JSON parse lệch)
+        self.raw_data = list(items)
+        self.lbl_raw.setText(f"📊 Kho hàng: {len(self.raw_data)} mục")
+        self.lbl_ai_status.setText(f"📥 Đã đưa {len(items)} từ từ lịch sử vào xưởng!")
+        self.lbl_ai_status.setStyleSheet("color:#27ae60;font-size:11px;font-weight:bold;")
+        tooltip(f"📥 Đã đưa {len(items)} từ vào xưởng. Bấm 'Kiểm Định' để kiểm tra & xuất xưởng.")
 
 
 # ═══════════════════════════════════════════════════════════

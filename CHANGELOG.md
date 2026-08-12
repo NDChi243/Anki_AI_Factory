@@ -1,5 +1,21 @@
 # 📋 CHANGELOG
 
+## [V17.1] — 2026-08-12
+
+### ✨ Added
+- **✏️ Sửa Prompt & Schema AI (không cần sửa code)**: Nút "✏️ Sửa Prompt / Schema AI" trong Cài Đặt AI mở dialog chỉnh System Prompt + mẫu JSON cho từng ngôn ngữ (Từ vựng & Ngữ pháp) — đổi luật trích xuất, schema, field_count ngay trên giao diện (ui/prompt_editor.py).
+- **🗂 Field Map Editor (Mức 1 — đóng "schema lock-in" ở lớp thẻ)**: Tab "🗂 Field Map" trong dialog — bảng map key JSON (tự sinh từ template đã sửa) → Field Anki (chỉnh được, key mới tự suy tên field). Khi Lưu: **tự THÊM field mới vào Note Type** (6 model: 3 ngôn ngữ × từ vựng/ngữ pháp nếu đã tồn tại); mọi nơi dùng `self._cfg()` (kiểm định/merge/import/tạo model) đều nhận `json_field_map` + `all_fields` HIỆU LỰC (defaults + ghi đè). Lưu trong `utils/ai_prompts.json` (`field_map`).
+- **🃏 Card Render tự động (Mức 2 — field mới TỰ HIỆN TRÊN THẺ)**: `mode/card_render.py` — sau khi thêm field mới, khối "extra fields" được APPEND vào cuối template thẻ (không phá template gốc), mỗi field bọc `{{#Field}}...{{/Field}}` (rỗng thì ẩn) + inline styles. Cột **"Hiển thị"** trong Field Map chọn vị trí: Chỉ mặt sau / Cả hai mặt / Chỉ mặt trước (`card_show` trong `ai_prompts.json`). `get_or_create_model`/`_force_rebuild_model`/editor save đều dùng builder → **Lưu xong là thẻ hiện field mới ngay**, không cần sửa template tay.
+- **🎛️ Prompt Config ra ngoài**: Prompt + JSON template lưu trong `utils/ai_prompts.json` (gitignored) qua `utils/prompt_config.py`; `get_system_prompt()`/`get_json_template()` trả giá trị hiệu lực (defaults + ghi đè), có validate JSON, preview prompt đầy đủ, Reset mặc định.
+- **⚡ Cache tự invalidate khi sửa prompt**: Cache key của AI giờ gồm `get_prompt_signature()` (md5 phần ghi đè prompt) → sửa prompt/schema → kết quả AI cũ tự bị bỏ, không dùng lại.
+
+### 🔧 Changed
+- **utils/batch_processor.py**: chuyển từ dùng `_SYSTEM_PROMPTS/_JSON_TEMPLATES/_GRAMMAR_*` (dict cứng) sang `get_system_prompt()`/`get_json_template()` (tôn trọng ghi đè).
+- **utils/ai_extractor.py**: `_PROMPT_VERSION` 3 → 4 (đổi format cache key); `get_json_template()`/`get_grammar_json_template()` giờ đọc từ prompt_config.
+- **__init__.py `_cfg()`**: bơm `apply_field_map_to_cfg()` → json_field_map/all_fields/card_show hiệu lực cho mọi flow (kiểm định, merge, import, tạo model).
+- **__init__.py get_or_create_model/_force_rebuild_model**: dùng `mode.card_render.build_qfmt/build_afmt` → template thẻ tự append field tuỳ chỉnh.
+- **Sửa lỗi gõ lặp** trong prompt Hàn: "(습니다/습니다/존댓말)" → "(습니다/존댓말)" (giúp prompt compact lại dưới 1400 ký tự).
+
 ## [V17.0] — 2026-08
 
 ### ✨ Added
@@ -7,6 +23,9 @@
 - **🔤 Romanization cho tiếng Hàn**: Field Romanization + Example Romanization/Example2 Romanization hiển thị trên thẻ, đọc/ghi đầy đủ trong JSON (Language/korean.py, mode/templates.py)
 - **🎓 Bộ lọc TOPIK Level**: level_choices TOPIK I/TOPIK II/1-6 trong bộ lọc cấp độ (Language/korean.py)
 - **🧩 KO_WB_POOL**: Word-Building ghép chữ Hangul cho tiếng Hàn (mode/shared.py)
+- **🎯 Chọn lọc & xuất xưởng theo lựa chọn**: Sau khi bấm Kiểm Định, "Thẻ chờ xuất xưởng" hỗ trợ tìm kiếm theo từ/nghĩa, lọc nhanh theo loại (✨ Mới / 🔄 Cập nhật / ⚠️ Trùng mờ / 🔍 Nghĩa khác), tích chọn từng thẻ hoặc chọn theo khoảng số "Từ-đến" — **đổi khoảng là TỰ ĐỘNG tích chọn** các thẻ trong khoảng đó (theo danh sách đang hiển thị), chọn deck đích qua deck_chooser để đẩy vào — sau khi xuất, danh sách tự cập nhật bỏ các thẻ đã xuất, cho phép đẩy tiếp nhóm còn lại sang deck khác (__init__.py)
+- **💾 Giữ thẻ trong xưởng khi đóng cửa sổ**: Thẻ chờ xuất xưởng + kho hàng được lưu vào factory_state.json theo từng luồng (ngôn ngữ × từ vựng/ngữ pháp) và khôi phục khi mở lại Factory; thẻ chỉ bị xóa khi người dùng chủ động bấm "🧹 Hủy Hàng" — xóa toàn bộ hoặc xóa các thẻ đã chọn (__init__.py)
+- **📚 Lịch Sử AI (xem lại & import lại)**: Nút "Lịch Sử AI" mở dialog liệt kê toàn bộ từ vựng đã lưu (AI trích xuất / import) — tìm theo từ/nghĩa, lọc theo ngôn ngữ, tích chọn nhiều từ rồi "📥 Đưa Vào Xưởng" để Kiểm Định & xuất xưởng lại, xem được ngay cả sau khi đóng Factory. `add_to_import_history` giờ lưu cả item gốc để tái dựng đầy đủ (ui/history_dialog.py, utils/ai_extractor.py: get_import_history_items)
 
 ### 🔧 Changed
 - **Version bump**: Tất cả model names V16.0 → V17.0 (Language/japanese.py, Language/chinese.py)

@@ -14,6 +14,7 @@ from aqt.qt import (
 from aqt.utils import showInfo, tooltip
 
 from utils.ai_extractor import get_api_config, save_api_config, clear_cache, clear_import_history
+from ui.prompt_editor import show_prompt_editor_dialog
 
 
 def show_ai_settings_dialog(parent):
@@ -161,6 +162,19 @@ def show_ai_settings_dialog(parent):
 
     cache_bar.addStretch()
     vl.addLayout(cache_bar)
+
+    # Prompt & Schema editor (Đề xuất #1 — sửa luật AI không cần sửa code)
+    prompt_bar = QHBoxLayout()
+    btn_edit_prompts = QPushButton("✏️ Sửa Prompt / Schema AI")
+    btn_edit_prompts.setStyleSheet("padding:6px 12px;background:#8e44ad;color:white;font-weight:bold;border-radius:6px;")
+    btn_edit_prompts.setToolTip(
+        "Chỉnh System Prompt + mẫu JSON mà AI phải tuân theo (từng ngôn ngữ, từ vựng & ngữ pháp).\n"
+        "Lưu vào utils/ai_prompts.json — không cần sửa code. Sửa prompt → cache AI tự làm mới."
+    )
+    btn_edit_prompts.clicked.connect(lambda: show_prompt_editor_dialog(dlg))
+    prompt_bar.addWidget(btn_edit_prompts)
+    prompt_bar.addStretch()
+    vl.addLayout(prompt_bar)
 
     # Buttons
     btn_layout = QHBoxLayout()

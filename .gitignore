@@ -3,6 +3,9 @@
 # === API Keys & Secrets ===
 utils/ai_config.json
 
+# === Prompt Config (người dùng có thể ghi đè — không commit để tránh xung đột) ===
+utils/ai_prompts.json
+
 # === Local Data & Cache ===
 utils/import_history.json
 utils/ai_cache/

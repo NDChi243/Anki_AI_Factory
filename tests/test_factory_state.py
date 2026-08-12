@@ -54,10 +54,10 @@ aqt_qt.QDialog = _QDialog
 for _n in ("QVBoxLayout", "QHBoxLayout", "QGridLayout", "QFormLayout", "QLabel",
            "QPushButton", "QLineEdit", "QPlainTextEdit", "QCheckBox", "QComboBox",
            "QDoubleSpinBox", "QSpinBox", "QSlider", "QColorDialog", "QGroupBox",
-           "QListWidget", "QProgressBar", "QTextBrowser", "QTextEdit", "QTableWidget",
+           "QListWidget", "QListWidgetItem", "QProgressBar", "QTextBrowser", "QTextEdit", "QTableWidget",
            "QTableWidgetItem", "QScrollArea", "QWidget", "QAbstractItemView",
            "QTimer", "QAction", "QTreeWidget", "QTreeWidgetItem", "QInputDialog",
-           "QMenu"):
+           "QMenu", "QTabWidget", "QHeaderView"):
     aqt_qt.__dict__[_n] = lambda *a, **k: MagicMock()
 aqt_qt.QColor = type("QColor", (), {})
 aqt_qt.QApplication = MagicMock()

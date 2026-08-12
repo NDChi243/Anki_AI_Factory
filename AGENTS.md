@@ -1,4 +1,4 @@
-# AGENTS.md — AnkiTool Multi-Language V17.0
+# AGENTS.md — AnkiTool Multi-Language V17.1
 
 > Điểm vào cho mọi AI agent (Claude Code, Cursor, Copilot, Codex...).
 > **Hệ thống kiến thức đầy đủ nằm trong `.claude/` — đọc theo progressive disclosure để tiết kiệm token.**
@@ -28,6 +28,6 @@
 
 ## CẤU TRÚC TỔNG QUAN (tóm tắt 1 dòng)
 
-`__init__.py` (AnkiSmartFactory) → `Language/`, `mode/`, `audio/`, `utils/`, `workers/`, `ui/`, `hooks/reviewer.py`. Version 16.0.0, entry `start_smart_factory()` (`__init__.py:1892`), shortcut `Ctrl+Shift+I`.
+`__init__.py` (AnkiSmartFactory) → `Language/`, `mode/`, `audio/`, `utils/`, `workers/`, `ui/`, `hooks/reviewer.py`. Version 17.1.0, entry `start_smart_factory()` (`__init__.py:2430`), shortcut `Ctrl+Shift+I`.
 
 > Lưu ý: `CODE_MAP.md`/`UPGRADE_GUIDE.md` ở root là tài liệu cũ — dùng `.claude/` làm nguồn chính thức.

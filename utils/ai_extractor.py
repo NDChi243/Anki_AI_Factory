@@ -24,6 +24,22 @@ from .logger import get_logger
 logger = get_logger()
 
 # ═══════════════════════════════════════════════════════════
+#  PROMPT CONFIG — System prompt + JSON template có thể ghi đè ngoài
+#  (utils/ai_prompts.json qua utils/prompt_config.py) mà không sửa code.
+#  Lazy import trong prompt_config để tránh circular import.
+# ═══════════════════════════════════════════════════════════
+from .prompt_config import (
+    get_system_prompt as get_effective_system_prompt,
+    get_json_template as get_effective_json_template,
+    get_signature as get_prompt_signature,
+    get_fields as get_prompt_fields,
+    get_field_count as get_prompt_field_count,
+    save_config as save_prompt_config,
+    reset_config as reset_prompt_config,
+    get_effective_config as get_effective_prompt_config,
+)
+
+# ═══════════════════════════════════════════════════════════
 #  API KEY ENCRYPTION (AES-GCM via Fernet, fallback XOR)
 # ═══════════════════════════════════════════════════════════
 
@@ -461,11 +477,14 @@ def _format_token_report(token_info: dict) -> str:
 #  CACHE (AI results)
 # ═══════════════════════════════════════════════════════════
 # Bump version mỗi khi thay đổi prompt/chiến lược → invalidate cache cũ
-_PROMPT_VERSION = 3
+_PROMPT_VERSION = 4
 
 
 def _ai_cache_key(text: str, lang: str, instruction: str, existing_hash: str, kind: str = "vocab") -> str:
-    raw = f"{_PROMPT_VERSION}|{kind}|{lang}|{instruction}|{existing_hash}|{text}"
+    # get_prompt_signature() = md5 phần ghi đè prompt (utils/ai_prompts.json)
+    # → người dùng sửa prompt/schema trong editor → cache tự invalidate (quy tắc #9)
+    sig = get_prompt_signature()
+    raw = f"{_PROMPT_VERSION}|{sig}|{kind}|{lang}|{instruction}|{existing_hash}|{text}"
     return hashlib.md5(raw.encode("utf-8")).hexdigest()
 
 
@@ -614,7 +633,7 @@ LUẬT:
 1. Đủ 12 trường; thiếu → "". example_romanization & example_2_romanization LUÔN phải có, romanization chuẩn (Revised Romanization); thiếu → từ không hợp lệ.
 2. VÍ DỤ CÓ HỒN + ĐÚNG CẤP ĐỘ (quan trọng nhất):
    - Ex1: khẩu ngữ đời thực (cà phê, nhắn tin, than thở, MXH...), cảm xúc thật, kết thúc câu tự nhiên (어요/아요/거야/잖아).
-   - Ex2: trang trọng, lịch sự (습니다/습니다/존댓말).
+   - Ex2: trang trọng, lịch sự (습니다/존댓말).
    - Cấp độ ví dụ khớp TOPIK: TOPIK I → câu cực ngắn, đơn giản; TOPIK II → trung bình/phức tạp. TUYỆT ĐỐI không nhồi từ khó vào từ cấp thấp.
    - TRÁNH câu SGK vô hồn. Từ đa nghĩa → 2 nghĩa khác nhau ở 2 ví dụ. Ví dụ ngắn gọn, 5-12 từ.
 3. CHỐNG TRÙNG: bỏ qua mọi từ trong "TỪ ĐÃ CÓ".
@@ -636,8 +655,9 @@ _JSON_TEMPLATES = {
 }
 
 
-def get_json_template(lang: str) -> str:
-    return _JSON_TEMPLATES.get(lang, _JAPANESE_JSON_TEMPLATE)
+def get_json_template(lang: str, kind: str = "vocab") -> str:
+    """Template JSON hiệu lực — tôn trọng ghi đè trong prompt_config (ai_prompts.json)."""
+    return get_effective_json_template(lang, kind)
 
 
 # ═══════════════════════════════════════════════════════════
@@ -770,7 +790,7 @@ _GRAMMAR_JSON_TEMPLATES = {
 
 
 def get_grammar_json_template(lang: str) -> str:
-    return _GRAMMAR_JSON_TEMPLATES.get(lang, _JAPANESE_GRAMMAR_JSON_TEMPLATE)
+    return get_effective_json_template(lang, "grammar")
 
 
 # ═══════════════════════════════════════════════════════════
@@ -1064,7 +1084,7 @@ def extract_vocabulary_with_ai(
     if not cfg.get("api_key") and "localhost" not in cfg.get("api_base", ""):
         raise ValueError("⚠️ Chưa cấu hình API Key. Vào Cài đặt AI để nhập key.")
 
-    system_prompt = _SYSTEM_PROMPTS.get(lang, _JAPANESE_SYSTEM_PROMPT)
+    system_prompt = get_effective_system_prompt(lang, "vocab")
 
     # Giới hạn text — có thể cấu hình (mặc định 45k ký tự, DeepSeek 64k context)
     max_chars = cfg.get("max_chars", 45000)
@@ -1665,7 +1685,7 @@ def extract_grammar_with_ai(
     if not cfg.get("api_key") and "localhost" not in cfg.get("api_base", ""):
         raise ValueError("⚠️ Chưa cấu hình API Key. Vào Cài đặt AI để nhập key.")
 
-    system_prompt = _GRAMMAR_SYSTEM_PROMPTS.get(lang, _GRAMMAR_SYSTEM_PROMPTS["japanese"])
+    system_prompt = get_effective_system_prompt(lang, "grammar")
 
     # Giới hạn text — có thể cấu hình (mặc định 45k ký tự, DeepSeek 64k context)
     max_chars = cfg.get("max_chars", 45000)
@@ -2094,6 +2114,8 @@ def add_to_import_history(vocab_list: list, lang: str, deck_name: str = "", sour
             "deck": deck_name,
             "imported_at": now,
             "source": source,
+            # Lưu toàn bộ item gốc để có thể đưa lại vào xưởng và import lại
+            "item": item,
         }
 
         # Furigana / Pinyin
@@ -2188,6 +2210,56 @@ def get_import_history(lang: str = None, limit: int = 2000) -> dict:
     result["words"] = all_words[:limit]
 
     return result
+
+
+def get_import_history_items(lang: str = None, limit: int = 5000) -> list:
+    """
+    Lấy từ vựng trong lịch sử import dưới dạng item dict tương thích với xưởng
+    (để đưa lại vào xưởng và import lại). Mới nhất trước.
+
+    Args:
+        lang: Lọc theo ngôn ngữ (None = tất cả)
+        limit: Giới hạn số mục trả về
+
+    Returns:
+        List [(lang, item_dict), ...] — ưu tiên item gốc đã lưu trong lịch sử;
+        nếu entry cũ chưa có item thì dựng lại từ các field đã lưu.
+    """
+    data = _load_history()
+    entries = data.get("entries", {})
+    result = []
+    for l, words in entries.items():
+        if lang and l != lang:
+            continue
+        for w in words.values():
+            item = w.get("item")
+            if not isinstance(item, dict):
+                item = {
+                    "front": w.get("front", ""),
+                    "meaning": w.get("meaning", ""),
+                    "topic": w.get("topic", ""),
+                }
+                level = w.get("level", "")
+                if level:
+                    if l == "japanese":
+                        item["jlptlevel"] = level
+                    else:
+                        item["hsk_level"] = level
+                if w.get("furigana"):
+                    item["furigana"] = w["furigana"]
+                if w.get("pinyin"):
+                    item["pinyin"] = w["pinyin"]
+                if w.get("traditional"):
+                    item["traditional"] = w["traditional"]
+            else:
+                item = dict(item)  # tránh mutate dữ liệu gốc trong file
+                if not item.get("front"):
+                    item["front"] = w.get("front", "")
+            if not item.get("front"):
+                continue
+            result.append((l, w.get("imported_at", 0), item))
+    result.sort(key=lambda x: x[1], reverse=True)
+    return [(l, it) for l, _, it in result[:limit]]
 
 
 def search_import_history(query: str, lang: str = None, limit: int = 50) -> list:

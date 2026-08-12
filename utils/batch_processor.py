@@ -22,12 +22,14 @@ from typing import Optional, Callable, List, Dict
 
 from .logger import get_logger
 from .ai_extractor import (
-    get_api_config, _SYSTEM_PROMPTS, _JSON_TEMPLATES,
-    _GRAMMAR_SYSTEM_PROMPTS, _GRAMMAR_JSON_TEMPLATES,
+    get_api_config,
     _make_existing_hash, _parse_ai_json_with_comment,
     _apply_reasoning_effort, _http_post_json,
     get_existing_vocab_from_deck, init_import_history,
     is_openrouter, _get_rate_limit_delay,
+)
+from .prompt_config import (
+    get_system_prompt, get_json_template,
 )
 
 logger = get_logger()
@@ -218,10 +220,7 @@ def _build_batch_user_prompt(
     grammar: bool = False,
 ) -> str:
     """Xây dựng user prompt cho một batch từ (hoặc cấu trúc ngữ pháp)"""
-    if grammar:
-        template = _GRAMMAR_JSON_TEMPLATES.get(lang, _GRAMMAR_JSON_TEMPLATES["japanese"])
-    else:
-        template = _JSON_TEMPLATES.get(lang, _JSON_TEMPLATES["japanese"])
+    template = get_json_template(lang, "grammar" if grammar else "vocab")
     
     # Liệt kê từ/pattern cần xử lý
     word_list_str = "\n".join(
@@ -317,10 +316,7 @@ def _call_ai_for_batch(
     if not cfg.get("api_key") and "localhost" not in cfg.get("api_base", ""):
         raise ValueError("⚠️ Chưa cấu hình API Key")
     
-    if grammar:
-        system_prompt = _GRAMMAR_SYSTEM_PROMPTS.get(lang, _GRAMMAR_SYSTEM_PROMPTS.get("japanese", ""))
-    else:
-        system_prompt = _SYSTEM_PROMPTS.get(lang, _SYSTEM_PROMPTS.get("japanese", ""))
+    system_prompt = get_system_prompt(lang, "grammar" if grammar else "vocab")
     user_prompt = _build_batch_user_prompt(
         words, lang, existing_words, custom_instruction, batch_num, total_batches, grammar
     )

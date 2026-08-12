@@ -12,7 +12,8 @@ description: Lớp UI — ui/ (dialogs + theme) + i18n. Đọc khi sửa dialog,
 | Dialog | File:Dòng | Entry point | Ghi chú |
 |--------|-----------|-------------|---------|
 | `AiChatDialog` | `ui/ai_dialogs.py:15` | `from ui import AiChatDialog` | Hiển thị reply AI + vocab JSON; `_format_reply`:160 (bold/code/newline→HTML) |
-| AI Settings | `ui/ai_settings.py:19` | `show_ai_settings_dialog(parent)` | Cấu hình API key/base/model/temp/chunk/reasoning; `_test_ai_connection`:204 |
+| AI Settings | `ui/ai_settings.py:19` | `show_ai_settings_dialog(parent)` | Cấu hình API key/base/model/temp/chunk/reasoning; `_test_ai_connection`:204; nút "✏️ Sửa Prompt / Schema AI" mở Prompt Editor |
+| Prompt Editor | `ui/prompt_editor.py:64` | `show_prompt_editor_dialog(parent)` | Sửa System Prompt (RAW chứa `{{JSON_TEMPLATE}}`) + JSON template + tab "🗂 Field Map" (map key→Field Anki + cột "Hiển thị" front/back/both, tự sinh từ template, tự thêm field + đồng bộ template thẻ khi Lưu qua `_sync_models_after_save`); validate JSON, preview prompt, Reset mặc định; lưu `utils/ai_prompts.json` qua `utils.prompt_config` |
 | AI Preview | `ui/ai_preview.py:19` | `show_ai_preview_dialog(parent, vocab_list, lang, ...)` | Xem/sửa/xóa/tái tạo thẻ; hiểu chế độ grammar (cột Pattern) |
 | Batch | `ui/batch_dialog.py:15` | `BatchWordListDialog(lang, existing_words, parent, grammar)` | Paste danh sách lớn + batch AI + tổ chức deck |
 | Diff Meaning | `ui/verify_dialog.py:13` | `show_diff_meaning_dialog(parent, prepared_data, cfg)` | Báo cáo từ cùng mặt chữ khác nghĩa |

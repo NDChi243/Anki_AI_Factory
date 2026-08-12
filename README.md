@@ -1,11 +1,11 @@
-# 🌐 AnkiTool Multi-Language V17.0
+# 🌐 AnkiTool Multi-Language V17.1
 
 > **Vocabulary Factory cho Anki** — Tạo thẻ từ vựng tiếng Nhật, Trung & Hàn với AI, TTS, và interactive templates.
 
-[![Version](https://img.shields.io/badge/version-17.0.0-blue)](manifest.json)
+[![Version](https://img.shields.io/badge/version-17.1.0-blue)](manifest.json)
 [![Anki](https://img.shields.io/badge/anki-%3E%3D2.1.50-green)](manifest.json)
 [![Python](https://img.shields.io/badge/python-%3E%3D3.9-yellow)](manifest.json)
-[![Tests](https://img.shields.io/badge/tests-245%2B-brightgreen)](tests/)
+[![Tests](https://img.shields.io/badge/tests-332-brightgreen)](tests/)
 
 ---
 
@@ -30,6 +30,7 @@
 |-----------|-------|
 | 📏 **Nội dung dài 50k+** | Xử lý toàn bộ văn bản dài (tự chia đoạn ~8k ký tự/lần để chất lượng cao + không tràn token output); không bị cắt, xử lý hết 50k-100k+. |
 | 🧠 **Mức độ suy nghĩ AI** | Bộ chọn Thấp/Trung bình/Cao (reasoning_effort) trong Cài Đặt AI → cân bằng chất lượng vs token. |
+| ✏️ **Sửa Prompt / Schema / Field Map (không cần code)** | Nút "✏️ Sửa Prompt / Schema AI" trong Cài Đặt AI → chỉnh System Prompt + mẫu JSON + map key→Field Anki (chọn mặt hiển thị: sau/trước/cả hai) cho từng ngôn ngữ; **field mới tự thêm vào Note Type và TỰ HIỆN TRÊN THẺ khi lưu**; sửa prompt → cache AI tự làm mới (`utils/ai_prompts.json`, gitignored). |
 | 📎 **Kẹp File Tham Khảo** | Đính kèm TXT/MD/CSV/PDF/DOCX/XLSX làm tài liệu → AI đọc nội dung để trích xuất từ vựng/ngữ pháp. |
 | 📘 **Ngữ pháp** | Note Type ngữ pháp riêng cho cả 3 ngôn ngữ: thẻ 2 chiều "Cấu trúc→Nghĩa" & "Nghĩa→Cấu trúc", AI trích xuất pattern + công thức + cách dùng + ví dụ (có đánh dấu `<b>…</b>` trong ví dụ). |
 | 🤖 **AI Trích Xuất** | Dùng OpenAI/DeepSeek/Ollama để trích xuất từ vựng từ văn bản. Tự động tránh từ đã có trong deck. |
@@ -67,7 +68,7 @@ git clone https://github.com/NDChi243/Anki_AI_Factory.git
 ```
 
 ### Cấu hình AI
-1. Mở Anki → Tools → **AnkiTool Multi-Lang V17.0** (Ctrl+Shift+I)
+1. Mở Anki → Tools → **AnkiTool Multi-Lang V17.1** (Ctrl+Shift+I)
 2. Bấm **⚙️ Cài Đặt API**
 3. Nhập API Key từ [DeepSeek](https://platform.deepseek.com/api_keys) hoặc OpenAI
 4. Chọn preset hoặc nhập thủ công Base URL + Model
@@ -130,7 +131,7 @@ Anki_AI_Factory/
 ├── workers/              # Background threads (import, AI, preview, batch, deck scan)
 ├── utils/                # AI extractor, batch processor, JSON parser, logger, i18n, deck cache, deck manager
 ├── hooks/                # Reviewer hooks (speed, letter gap) + overview_mode.py
-├── tests/                # 245+ unit & integration tests
+├── tests/                # 332+ unit & integration tests
 ├── .claude/              # 🆕 Hệ thống SKILL cho AI — nguồn kiến thức chính thức
 │   ├── CLAUDE.md         # Memory gốc + index skills (đọc trước)
 │   └── skills/           # 11 skill theo chủ đề (bảo trì/nâng cấp tiết kiệm token)

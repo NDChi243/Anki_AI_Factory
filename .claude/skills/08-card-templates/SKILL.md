@@ -32,6 +32,18 @@ from .shared import _HW_CSS, _WB_JS_BODY, _HW_JS_BODY, WB_POOLS, _SHARED_UI_CSS,
 - Letter Gap: HTML phải chứa `id="lg-display"` để reviewer hook inject JS (xem hooks/reviewer.py:15).
 - Grammar: đánh dấu pattern trong ví dụ bằng `<b>…</b>` (prompt yêu cầu).
 
+## 🃏 CARD RENDER TUỲ CHỈNH (`mode/card_render.py`) — Mức 2
+
+- **Vai trò**: khi người dùng thêm field mới qua Field Map Editor (Mức 1), module này tự
+  APPEND khối "extra fields" vào cuối qfmt/afmt → field mới TỰ HIỆN trên thẻ mà KHÔNG sửa template gốc.
+- `base_template_fields(tmpls)` — tập field template gốc tham chiếu (để biết field nào là "mới").
+- `get_extra_fields(cfg, base_fields)` — field tuỳ chỉnh cần render: trong `json_field_map` + `all_fields`,
+  ngoài template gốc, side theo `cfg["card_show"]` (mặc định "back").
+- `extra_fields_block(cfg, base_fields, side)` — HTML: `{{#Field}}...{{/Field}}` (rỗng thì ẩn) + inline styles (không cần CSS file).
+- `build_qfmt(cfg, tmpls, i)` / `build_afmt(cfg, tmpls, i)` — template gốc + block. **Dùng ở `__init__.py`
+  get_or_create_model/_force_rebuild_model và `ui/prompt_editor.py:_sync_models_after_save`.**
+- **QUY ƯỚC**: KHÔNG phá template combo hiện có — chỉ append; mỗi field bọc `{{#Field}}`; thứ tự theo `all_fields`.
+
 ## CSS (`mode/css.py`)
 
 ```python

@@ -60,16 +60,38 @@ body = _http_post_json(url, payload, headers, timeout=_timeout, progress_callbac
 ## CACHE (QUAN TRỌNG — TIẾT KIỆM TOKEN)
 
 - Cache AI kết quả: `utils/ai_cache/`, key = `_ai_cache_key(text, lang, instruction, existing_hash)`.
-- **Bump `_PROMPT_VERSION` (`ai_extractor.py:385`) MỖI KHI sửa prompt/chiến lược** → invalidate toàn bộ cache cũ.
+- **Bump `_PROMPT_VERSION` (`ai_extractor.py`) MỖI KHI sửa prompt MẶC ĐỊNH trong code** → invalidate toàn bộ cache cũ.
+- ⭐ **V17.1: sửa prompt QUA `utils/prompt_config.py` (file `utils/ai_prompts.json`) KHÔNG cần bump tay** — cache key giờ gồm `get_prompt_signature()` (md5 phần ghi đè) → sửa là tự invalidate.
 - Deck vocab cache nằm ở `utils/deck_cache.py` (incremental 5p + full 30p) — gọi `invalidate_deck_cache()` khi deck thay đổi.
 - Import history: `utils/import_history.json` — AI dùng để tránh từ đã import.
 
 ## PROMPT & JSON TEMPLATE (nơi hay sửa)
 
-- System prompt vocab: `_SYSTEM_PROMPTS[lang]` (544, gồm japanese/chinese/korean). Grammar: `_GRAMMAR_SYSTEM_PROMPTS[lang]` (677).
-- JSON output template: `get_json_template(lang)` / `get_grammar_json_template(lang)` — gửi cho AI làm format chuẩn.
+- System prompt vocab: `_SYSTEM_PROMPTS[lang]` (japanese/chinese/korean). Grammar: `_GRAMMAR_SYSTEM_PROMPTS[lang]`.
+- JSON output template: `get_json_template(lang, kind)` / `get_grammar_json_template(lang)` — gửi cho AI làm format chuẩn.
 - `_format_existing_context(existing, text, label)` — CHỈ gửi từ trùng với text (tối ưu input), cap `_MAX_EXISTING_SHOWN=400`.
 - Giữ prompt GỌN: output yêu cầu explanation ≤2 câu, ví dụ 5-12 từ (kiểm bởi tests/test_token_optimization.py).
+
+## 🎛️ PROMPT CONFIG (V17.1 — ĐỀ XUẤT #1) — nơi sửa prompt KHÔNG cần đụng code
+
+> Kể từ V17.1, người dùng chỉnh prompt/schema qua UI (`ui/prompt_editor.py`, mở từ nút "✏️ Sửa Prompt / Schema AI" trong Cài Đặt AI) hoặc trực tiếp file `utils/ai_prompts.json` (gitignored).
+
+- **Module chính**: `utils/prompt_config.py` — KHÔNG import ai_extractor ở top (lazy trong hàm để tránh circular).
+- **API quan trọng** (cũng re-export qua `utils/__init__.py`):
+  - `get_system_prompt(lang, kind)` / `get_json_template(lang, kind)` — giá trị HIỆU LỰC (defaults + ghi đè). `kind` = `"vocab"` | `"grammar"`.
+  - `get_effective_config()` — toàn bộ config cho UI editor (gồm `system_prompt_raw`, `fields`, `field_count`, `modified`, `field_map`, `default_field_map`, `all_fields`).
+  - `save_config(entries, field_map=None)` / `reset_config()` / `validate_json_template(tpl)` / `get_signature()` / `has_overrides()`.
+- **FIELD MAP + CARD RENDER (Mức 1 + 2 — đóng schema lock-in ở lớp thẻ)**:
+  - `get_field_map(lang, kind, default_field_map)` — map {json_key → anki_field} hiệu lực (defaults từ `Language/*.py` `json_field_map` + ghi đè `field_map` trong `ai_prompts.json`).
+  - `get_card_show(lang, kind)` — vị trí hiển thị field tuỳ chỉnh {field: "front"|"back"|"both"} (Mức 2).
+  - `apply_field_map_to_cfg(cfg, lang, kind)` — trả copy cfg với `json_field_map` + `all_fields` + `card_show` hiệu lực. **`__init__.py:_cfg()` bơm hàm này** → mọi flow tự nhận field mới.
+  - `auto_field_name(json_key)` — tự suy field Anki từ key (`english_meaning` → `English Meaning`).
+  - UI: tab "🗂 Field Map" trong `ui/prompt_editor.py`; lưu xong tự gọi `_sync_models_after_save()` thêm field + ĐỒNG BỘ template thẻ.
+  - **Render thẻ**: `mode/card_render.py` — `build_qfmt/build_afmt` APPEND khối "extra fields" ({{#Field}}...{{/Field}} + inline styles) vào cuối template gốc → field mới TỰ HIỆN trên thẻ (mặc định mặt sau). `__init__.py get_or_create_model/_force_rebuild_model` dùng builder này.
+- **Cơ chế RAW + placeholder**: `system_prompt` lưu dạng RAW chứa `{{JSON_TEMPLATE}}` (tái dựng từ defaults bằng `str.replace` — không copy 250 dòng). Runtime thay placeholder bằng `json_template` hiệu lực → sửa mẫu JSON tự phản ánh vào prompt.
+- **Trong ai_extractor**: các nơi gọi prompt giờ dùng `get_effective_system_prompt(lang, "vocab"|"grammar")`; `get_json_template()`/`get_grammar_json_template()` delegate về prompt_config. `_SYSTEM_PROMPTS`/`_GRAMMAR_SYSTEM_PROMPTS` vẫn giữ làm DEFAULT (tests test_grammar/test_token_optimization đọc trực tiếp).
+- **batch_processor** dùng `get_system_prompt`/`get_json_template` từ prompt_config (KHÔNG import `_SYSTEM_PROMPTS`/`_JSON_TEMPLATES` nữa).
+- **Khi sửa prompt mặc định trong code**: nhớ cập nhật cả test compactness (`tests/test_token_optimization.py` — len `< 1400` vocab / `< 2400` grammar).
 
 ## TRAPS (lỗi thường gặp)
 
