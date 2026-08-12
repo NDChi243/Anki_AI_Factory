@@ -25,6 +25,7 @@
 | Sửa json_parser/logger/cache | `.claude/skills/09-utils/SKILL.md` |
 | Chạy/viết test | `.claude/skills/10-testing/SKILL.md` |
 | Nâng cấp version/release | `.claude/skills/11-upgrade-playbook/SKILL.md` |
+| 🐞 Tìm/sửa BUG (đọc log, root cause) | `.claude/skills/12-debugging/SKILL.md` |
 
 ## CẤU TRÚC TỔNG QUAN (tóm tắt 1 dòng)
 

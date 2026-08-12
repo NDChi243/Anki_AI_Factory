@@ -28,6 +28,7 @@ Bước 4: Chạy tests liên quan (xem skill 10)
 | 09 | utils | Sửa json_parser/logger/i18n/deck_cache | ~1.0k |
 | 10 | testing | Chạy/viết test, verify sau khi sửa | ~1.0k |
 | 11 | upgrade-playbook | Nâng cấp version, bảo trì, release | ~1.2k |
+| 12 | debugging | 🐞 Tìm/sửa BUG: đọc log, root cause, catalogue lỗi | ~0.5k |
 
 ## 🧭 SƠ ĐỒ TỔNG QUAN (TỐI GIẢN)
 
