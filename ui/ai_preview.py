@@ -12,6 +12,7 @@ from aqt.utils import showInfo, tooltip
 
 from utils.ai_extractor import extract_vocabulary_with_ai, extract_vocabulary_long_text
 from utils.logger import get_logger
+from utils.i18n import t
 
 logger = get_logger()
 
@@ -33,9 +34,9 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
         on_finalize_callback: Callback khi user chấp nhận (nhận final_list)
         grammar: True nếu đang ở chế độ Ngữ pháp
     """
-    item_label = "Cấu Trúc Ngữ Pháp" if grammar else "Từ Vựng"
+    item_label = t("item_label_grammar") if grammar else t("item_label_vocab")
     dlg = QDialog(parent)
-    dlg.setWindowTitle(f"🔍 Xem Trước & Chỉnh Sửa — {len(vocab_list)} {item_label}")
+    dlg.setWindowTitle(t("dlg_preview_edit", count=len(vocab_list), item=item_label))
     dlg.setMinimumSize(900, 650)
     dlg.resize(1000, 750)
     dlg.setWindowFlags(
@@ -48,11 +49,11 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
     # Header
     header = QHBoxLayout()
     header.addWidget(QLabel(
-        f"<h3>🤖 AI đã trích xuất <span style='color:#e67e22;'>{len(vocab_list)} {item_label}</span></h3>"
+        f"<h3>{t('preview_header_html', count=len(vocab_list), item=item_label)}</h3>"
     ))
     header.addStretch()
 
-    btn_accept_all = QPushButton("✅ CHẤP NHẬN TẤT CẢ → Đổ Vào Xưởng")
+    btn_accept_all = QPushButton(t("btn_accept_all"))
     btn_accept_all.setStyleSheet(
         "padding:10px 20px;background:#27ae60;color:white;"
         "font-weight:bold;border-radius:8px;font-size:13px;"
@@ -63,11 +64,7 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
     header.addWidget(btn_accept_all)
     vl.addLayout(header)
 
-    vl.addWidget(QLabel(
-        "<p style='color:#555;'>✏️ <b>Click đúp</b> vào ô để sửa. "
-        "Chọn thẻ và dùng nút bên dưới để <b>Xóa</b> hoặc <b>Tái Tạo</b> từng thẻ. "
-        "Có thể <b>Shift/Ctrl+Click</b> để chọn nhiều thẻ.</p>"
-    ))
+    vl.addWidget(QLabel(t("preview_hint")))
 
     # Table
     table = QTableWidget()
@@ -118,21 +115,21 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
     # Action buttons
     action_bar = QHBoxLayout()
 
-    btn_select_all = QPushButton("☑️ Chọn Tất Cả")
+    btn_select_all = QPushButton(t("btn_select_all_check"))
     btn_select_all.clicked.connect(lambda: table.selectAll())
     action_bar.addWidget(btn_select_all)
 
-    btn_edit_selected = QPushButton("✏️ Sửa Thẻ Đã Chọn")
+    btn_edit_selected = QPushButton(t("btn_edit_selected"))
     btn_edit_selected.setStyleSheet("padding:6px 12px;background:#3498db;color:white;font-weight:bold;border-radius:6px;")
     btn_edit_selected.clicked.connect(lambda: _edit_selected_card(table, columns, vocab_list))
     action_bar.addWidget(btn_edit_selected)
 
-    btn_delete = QPushButton("🗑 Xóa Thẻ Đã Chọn")
+    btn_delete = QPushButton(t("btn_delete_selected"))
     btn_delete.setStyleSheet("padding:6px 12px;background:#e74c3c;color:white;font-weight:bold;border-radius:6px;")
     btn_delete.clicked.connect(lambda: _delete_selected(table, vocab_list, dlg))
     action_bar.addWidget(btn_delete)
 
-    btn_regenerate = QPushButton("🔄 Tái Tạo Thẻ Đã Chọn")
+    btn_regenerate = QPushButton(t("btn_regenerate"))
     btn_regenerate.setStyleSheet("padding:6px 12px;background:#e67e22;color:white;font-weight:bold;border-radius:6px;")
     btn_regenerate.clicked.connect(lambda: _regenerate_selected(
         table, columns, vocab_list, lang, ai_text_input, ai_instruction,
@@ -140,7 +137,7 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
     ))
     action_bar.addWidget(btn_regenerate)
 
-    btn_regenerate_all = QPushButton("🔁 Tái Tạo Tất Cả")
+    btn_regenerate_all = QPushButton(t("btn_regenerate_all"))
     btn_regenerate_all.setStyleSheet("padding:6px 12px;background:#8e44ad;color:white;font-weight:bold;border-radius:6px;")
     btn_regenerate_all.clicked.connect(lambda: _regenerate_all(
         table, columns, vocab_list, lang, ai_text_input, ai_instruction,
@@ -154,14 +151,14 @@ def show_ai_preview_dialog(parent, vocab_list, lang, ai_text_input, ai_instructi
     # Bottom buttons
     bottom_bar = QHBoxLayout()
 
-    btn_cancel = QPushButton("❌ Hủy Bỏ")
+    btn_cancel = QPushButton(t("btn_cancel_modal"))
     btn_cancel.setStyleSheet("padding:10px 20px;background:#95a5a6;color:white;font-weight:bold;border-radius:8px;")
     btn_cancel.clicked.connect(dlg.reject)
     bottom_bar.addWidget(btn_cancel)
 
     bottom_bar.addStretch()
 
-    btn_accept = QPushButton("✅ CHẤP NHẬN & ĐỔ VÀO XƯỞNG")
+    btn_accept = QPushButton(t("btn_accept_pour"))
     btn_accept.setStyleSheet(
         "padding:12px 30px;background:#27ae60;color:white;"
         "font-weight:bold;border-radius:10px;font-size:14px;"
@@ -205,7 +202,7 @@ def _delete_selected(table, vocab_list, dlg):
         rows.add(item.row())
 
     if not rows:
-        tooltip("⚠️ Vui lòng chọn ít nhất một thẻ để xóa.")
+        tooltip(t("tooltip_select_to_delete"))
         return
 
     for row in sorted(rows, reverse=True):
@@ -214,8 +211,8 @@ def _delete_selected(table, vocab_list, dlg):
             vocab_list.pop(row)
 
     table.clearSelection()
-    dlg.setWindowTitle(f"🔍 Xem Trước & Chỉnh Sửa — {len(vocab_list)} Từ Vựng")
-    tooltip(f"✅ Đã xóa {len(rows)} thẻ.")
+    dlg.setWindowTitle(t("dlg_preview_edit", count=len(vocab_list), item=t("item_label_vocab")))
+    tooltip(t("tooltip_deleted", count=len(rows)))
 
 
 def _edit_selected_card(table, columns, vocab_list):
@@ -225,12 +222,12 @@ def _edit_selected_card(table, columns, vocab_list):
         selected_rows.add(item.row())
 
     if not selected_rows:
-        tooltip("⚠️ Vui lòng chọn một thẻ để sửa.")
+        tooltip(t("tooltip_select_to_edit"))
         return
 
     row = min(selected_rows)
     edit_dlg = QDialog(table.window())
-    edit_dlg.setWindowTitle(f"✏️ Sửa Thẻ #{row + 1}")
+    edit_dlg.setWindowTitle(t("edit_dlg_title", row=row + 1))
     edit_dlg.setMinimumWidth(600)
     layout = QVBoxLayout(edit_dlg)
 
@@ -247,11 +244,11 @@ def _edit_selected_card(table, columns, vocab_list):
     layout.addLayout(form)
 
     btn_bar = QHBoxLayout()
-    btn_cancel2 = QPushButton("❌ Hủy")
+    btn_cancel2 = QPushButton(t("btn_cancel_short"))
     btn_cancel2.clicked.connect(edit_dlg.reject)
     btn_bar.addWidget(btn_cancel2)
     btn_bar.addStretch()
-    btn_save = QPushButton("💾 Lưu")
+    btn_save = QPushButton(t("btn_save"))
     btn_save.setStyleSheet("padding:8px 20px;background:#27ae60;color:white;font-weight:bold;border-radius:6px;")
     btn_save.clicked.connect(edit_dlg.accept)
     btn_bar.addWidget(btn_save)
@@ -263,7 +260,7 @@ def _edit_selected_card(table, columns, vocab_list):
             table.item(row, col).setText(new_val)
             if row < len(vocab_list):
                 vocab_list[row][key] = new_val
-        tooltip(f"✅ Đã cập nhật thẻ #{row + 1}")
+        tooltip(t("tooltip_updated_card", row=row + 1))
 
 
 def _regenerate_selected(table, columns, vocab_list, lang, ai_text_input,
@@ -275,19 +272,19 @@ def _regenerate_selected(table, columns, vocab_list, lang, ai_text_input,
         selected_rows.add(item.row())
 
     if not selected_rows:
-        tooltip("⚠️ Vui lòng chọn ít nhất một thẻ để tái tạo.")
+        tooltip(t("tooltip_select_to_regen"))
         return
 
     text = ai_text_input.toPlainText().strip()
     if not text:
-        tooltip("⚠️ Không tìm thấy văn bản gốc để tái tạo.")
+        tooltip(t("tooltip_no_source_text"))
         return
 
     custom_instr = ai_instruction.text().strip()
     if grammar:
-        regen_instr = "CHỈ tái tạo các CẤU TRÚC NGỮ PHÁP sau (giữ nguyên pattern, cải thiện nghĩa + cách dùng + ví dụ):\n"
+        regen_instr = t("regen_instr_grammar")
     else:
-        regen_instr = "CHỈ tái tạo các từ sau đây (giữ nguyên mặt chữ, cải thiện nghĩa + ví dụ):\n"
+        regen_instr = t("regen_instr_vocab")
     for row in sorted(selected_rows):
         if row < len(vocab_list):
             word = (vocab_list[row].get("pattern")
@@ -331,13 +328,13 @@ def _regenerate_selected(table, columns, vocab_list, lang, ai_text_input,
                                 table_item.setText(val)
                     new_idx += 1
 
-            lbl_ai_status.setText(f"✅ Đã tái tạo {len(selected_rows)} thẻ!")
+            lbl_ai_status.setText(t("status_regen_done", count=len(selected_rows)))
             lbl_ai_status.setStyleSheet("color:#27ae60;font-size:11px;font-weight:bold;")
-            tooltip(f"✅ Đã tái tạo {new_idx} thẻ thành công!")
+            tooltip(t("tooltip_regen_done", count=new_idx))
         else:
-            tooltip("⚠️ AI không trả về kết quả tái tạo.")
+            tooltip(t("tooltip_regen_fail"))
     except Exception as e:
-        tooltip(f"❌ Lỗi tái tạo: {e}")
+        tooltip(t("tooltip_regen_error", error=e))
 
 
 def _regenerate_all(table, columns, vocab_list, lang, ai_text_input,
@@ -345,13 +342,11 @@ def _regenerate_all(table, columns, vocab_list, lang, ai_text_input,
                     grammar=False):
     """Tái tạo toàn bộ từ đầu (hỗ trợ cả từ vựng & ngữ pháp)."""
     from aqt.qt import QMessageBox
-    item_label = "cấu trúc ngữ pháp" if grammar else "từ vựng"
+    item_label = t("item_label_grammar_lower") if grammar else t("item_label_vocab_lower")
     reply = QMessageBox.question(
         parent,
-        "🔁 Xác Nhận Tái Tạo Tất Cả",
-        f"Điều này sẽ gọi lại AI để trích xuất lại toàn bộ {item_label}.\n"
-        "Tất cả chỉnh sửa hiện tại sẽ bị mất.\n\n"
-        "Bạn có chắc chắn muốn tiếp tục?",
+        t("regen_all_confirm_title"),
+        t("regen_all_confirm_msg", item=item_label),
         QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
         QMessageBox.StandardButton.No,
     )
@@ -360,7 +355,7 @@ def _regenerate_all(table, columns, vocab_list, lang, ai_text_input,
 
     text = ai_text_input.toPlainText().strip()
     if not text:
-        tooltip("⚠️ Không tìm thấy văn bản gốc.")
+        tooltip(t("tooltip_no_source_text2"))
         return
 
     custom_instr = ai_instruction.text().strip()
@@ -400,14 +395,14 @@ def _regenerate_all(table, columns, vocab_list, lang, ai_text_input,
                     table.setItem(row, col, table_item)
             table.resizeColumnsToContents()
 
-            dlg.setWindowTitle(f"🔍 Xem Trước & Chỉnh Sửa — {len(vocab_list_new)} {item_label.title()}")
-            lbl_ai_status.setText(f"✅ Tái tạo: {len(vocab_list_new)} {item_label}!")
+            dlg.setWindowTitle(t("dlg_preview_edit", count=len(vocab_list_new), item=item_label))
+            lbl_ai_status.setText(t("status_regen_all", count=len(vocab_list_new), item=item_label))
             lbl_ai_status.setStyleSheet("color:#27ae60;font-size:11px;font-weight:bold;")
-            tooltip(f"✅ Đã tái tạo toàn bộ: {len(vocab_list_new)} {item_label}!")
+            tooltip(t("tooltip_regen_all", count=len(vocab_list_new), item=item_label))
         else:
-            tooltip("⚠️ AI không trả về kết quả.")
+            tooltip(t("tooltip_regen_no_result"))
     except Exception as e:
-        tooltip(f"❌ Lỗi: {e}")
+        tooltip(t("tooltip_regen_all_error", error=e))
     finally:
         parent.setEnabled(True)
 
@@ -420,9 +415,7 @@ def _finalize_and_close(dlg, table, columns, vocab_list, on_finalize_callback):
     vocab_list.extend(final_list)
 
     if not final_list:
-        msg = ("⚠️ Không có cấu trúc ngữ pháp nào sau khi chỉnh sửa."
-               if "pattern" in columns else
-               "⚠️ Không có từ vựng nào sau khi chỉnh sửa.")
+        msg = (t("tooltip_no_grammar_after") if "pattern" in columns else t("tooltip_no_vocab_after"))
         tooltip(msg)
         return
 

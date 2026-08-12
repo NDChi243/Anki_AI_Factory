@@ -16,6 +16,7 @@ except Exception:
     gui_hooks = None
 
 from utils.logger import get_logger
+from utils.i18n import t, study_mode_labels
 
 logger = get_logger()
 
@@ -26,29 +27,6 @@ CONF_LANG_KEY = "ai_factory_active_lang"
 
 # Các chế độ học (khớp với _COMBO_MODE_JS trong mode/shared.py)
 MODES = ("qa", "vn", "wb", "pron", "lg")
-
-# Label theo ngôn ngữ hiện tại
-_LABELS_JA = {
-    "qa": "1. Nhật→Việt",
-    "vn": "2. Việt→Nhật",
-    "wb": "3. Ghép chữ",
-    "pron": "4. Furigana",
-    "lg": "5. Ẩn chữ cái",
-}
-_LABELS_ZH = {
-    "qa": "1. 中文→Việt",
-    "vn": "2. Việt→中文",
-    "wb": "3. Ghép chữ",
-    "pron": "4. Pinyin",
-    "lg": "5. Ẩn chữ cái",
-}
-_LABELS_KO = {
-    "qa": "1. 한국어→Việt",
-    "vn": "2. Việt→한국어",
-    "wb": "3. Ghép chữ",
-    "pron": "4. Romanization",
-    "lg": "5. Ẩn chữ cái",
-}
 
 
 def get_study_mode():
@@ -84,11 +62,8 @@ def _build_selector_html():
         lang = mw.col.conf.get(CONF_LANG_KEY, "japanese")
     except Exception:
         lang = "japanese"
-    labels = {
-        "japanese": _LABELS_JA,
-        "chinese": _LABELS_ZH,
-        "korean": _LABELS_KO,
-    }.get(lang, _LABELS_JA)
+    # Nhãn theo ngôn ngữ học + ngôn ngữ UI (vi: "Nhật→Việt" / en: "Japanese→English")
+    labels = study_mode_labels(lang)
     current = get_study_mode()
     opts = "".join(
         f'<option value="{k}"{" selected" if k == current else ""}>{labels[k]}</option>'
@@ -99,7 +74,7 @@ def _build_selector_html():
         'display:flex;align-items:center;justify-content:center;gap:10px;'
         'flex-wrap:wrap;padding:8px 12px;margin:0 auto 8px;max-width:520px;'
         'background:rgba(128,128,128,.08);border-radius:14px;">'
-        '<span style="font-size:12px;font-weight:700;opacity:.75;">🎯 Chế độ học:</span>'
+        f'<span style="font-size:12px;font-weight:700;opacity:.75;">{t("overview_mode_label")}</span>'
         '<select id="ai-factory-mode" onchange="pycmd(\'ai_factory_set_mode:\'+this.value)"'
         ' style="padding:6px 10px;border-radius:10px;border:1px solid #888;background:transparent;font-size:13px;">'
         f'{opts}'

@@ -9,7 +9,10 @@ _addon_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _addon_root not in sys.path:
     sys.path.insert(0, _addon_root)
 
-from utils.i18n import t, set_language, get_language, SUPPORTED_LANGUAGES
+from utils.i18n import (
+    t, set_language, get_language, toggle_language, SUPPORTED_LANGUAGES,
+    add_language_listener, remove_language_listener,
+)
 
 
 class TestI18nBasics:
@@ -76,6 +79,44 @@ class TestI18nPersistence:
         set_language("vi")
         assert t("ai_extract_btn", lang="en") == "🤖 AI Extract"
         assert get_language() == "vi"  # Global unchanged
+
+
+class TestI18nLiveSwitch:
+    """Tests for the smooth VI/EN toggle + live refresh listeners."""
+
+    def test_toggle_language_cycles_vi_en(self):
+        set_language("vi")
+        assert get_language() == "vi"
+        assert toggle_language() == "en"
+        assert get_language() == "en"
+        assert toggle_language() == "vi"
+        assert get_language() == "vi"
+
+    def test_language_listener_notified(self):
+        calls = []
+        def cb():
+            calls.append(get_language())
+        add_language_listener(cb)
+        try:
+            set_language("vi")
+            set_language("en")
+            assert calls == ["vi", "en"]
+        finally:
+            remove_language_listener(cb)
+
+    def test_remove_language_listener_stops_notifications(self):
+        calls = []
+        def cb():
+            calls.append(1)
+        add_language_listener(cb)
+        remove_language_listener(cb)
+        set_language("vi")
+        assert calls == []
+
+    def test_toggle_is_persisted(self):
+        set_language("vi")
+        toggle_language()  # → en
+        assert get_language() == "en"
 
 
 class TestI18nAllKeys:

@@ -354,6 +354,12 @@ def _cfg_ja():
 
 def _make_factory():
     """Tạo AnkiSmartFactory KHÔNG chạy __init__ (tránh UI) — chỉ test logic."""
+    # Buộc ngôn ngữ UI về tiếng Việt để khớp các chuỗi mock hardcode trong test
+    # (t() đọc theo get_language(); i18n_config.json có thể đang ở "en" do test trước)
+    try:
+        addon.set_language("vi")
+    except Exception:
+        pass
     obj = object.__new__(addon.AnkiSmartFactory)
     obj._current_lang = "japanese"
     obj._is_grammar = False

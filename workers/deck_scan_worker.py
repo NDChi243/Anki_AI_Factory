@@ -7,6 +7,7 @@ from aqt.qt import QThread, pyqtSignal
 
 from utils.ai_extractor import get_existing_vocab_from_deck
 from utils.logger import get_logger
+from utils.i18n import t
 
 logger = get_logger()
 
@@ -26,14 +27,14 @@ class DeckScanWorker(QThread):
 
     def run(self):
         try:
-            self.progress.emit("🔍 Đang quét deck Anki...")
+            self.progress.emit(t("status_scanning_deck"))
             words = get_existing_vocab_from_deck(
                 self.model_name, self.deck_id, self.front_field
             )
             if words:
-                self.progress.emit(f"📚 Deck có {len(words)} từ → AI sẽ tránh trùng")
+                self.progress.emit(t("status_deck_count", count=len(words)))
             else:
-                self.progress.emit("📚 Deck trống — sẵn sàng gọi AI")
+                self.progress.emit(t("worker_progress_empty_deck"))
             self.finished.emit(words)
         except Exception as e:
             logger.warning("DeckScanWorker error: %s", e)

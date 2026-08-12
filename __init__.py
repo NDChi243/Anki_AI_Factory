@@ -43,6 +43,13 @@ from utils.ai_extractor import (
 
 logger = get_logger()
 
+# i18n — dịch UI (vi/en) + listener để refresh mượt mà khi đổi ngôn ngữ
+from utils.i18n import (
+    t, set_language, get_language, toggle_language,
+    add_language_listener, remove_language_listener, SUPPORTED_LANGUAGES,
+    study_mode_labels,
+)
+
 # Import workers (đã tách ra workers/)
 from workers import ImportWorker, PreviewThread, AiExtractThread, AiChatThread
 from workers.deck_scan_worker import DeckScanWorker
@@ -108,6 +115,9 @@ class AnkiSmartFactory(QDialog):
         self._setup_ui()
         self._on_lang_changed()
 
+        # Đăng ký refresh UI khi ngôn ngữ giao diện thay đổi (từ nút toggle VI/EN)
+        add_language_listener(self._retranslate_ui)
+
         # Khởi tạo lịch sử import (quét deck lần đầu nếu cần)
         self._init_history()
 
@@ -118,7 +128,7 @@ class AnkiSmartFactory(QDialog):
             history = init_import_history(force_rescan=False)
             total = sum(len(v) for v in history.get("entries", {}).values())
             if total > 0:
-                self.lbl_ai_status.setText(f"📚 Lịch sử: {total} từ vựng đã có")
+                self.lbl_ai_status.setText(t("status_history_count", count=total))
                 self.lbl_ai_status.setStyleSheet("color:#27ae60;font-size:11px;")
         except Exception as e:
             logger.warning("Lỗi init history: %s", e)
@@ -144,7 +154,7 @@ class AnkiSmartFactory(QDialog):
         self._save_current_flow()
         self._is_grammar = is_grammar
         self._on_lang_changed()
-        tooltip("📘 Đã chuyển sang Ngữ pháp" if is_grammar else "📖 Đã chuyển sang Từ vựng")
+        tooltip(t("tooltip_switched_grammar") if is_grammar else t("tooltip_switched_vocab"))
 
     # ═══════════════════════════════════════════════════════
     #  LƯU / KHÔI PHỤC TRẠNG THÁI Ô AI (text + file) theo luồng
@@ -218,7 +228,7 @@ class AnkiSmartFactory(QDialog):
             self.raw_data = [d for d in flow.get("raw", []) if isinstance(d, dict)]
             self.prepared_data = [d for d in flow.get("cards", []) if isinstance(d, dict)]
             if hasattr(self, 'lbl_raw'):
-                self.lbl_raw.setText(f"📊 Kho hàng: {len(self.raw_data)} mục")
+                self.lbl_raw.setText(t("filter_raw_count", count=len(self.raw_data)))
             if hasattr(self, 'json_input'):
                 try:
                     self.json_input.blockSignals(True)
@@ -231,7 +241,7 @@ class AnkiSmartFactory(QDialog):
                 self.btn_import.setEnabled(len(self.prepared_data) > 0)
                 self.btn_cancel_order.setEnabled(len(self.prepared_data) > 0)
                 if self.prepared_data:
-                    self.lbl_ready.setText(f"✅ Sẵn sàng: {len(self.prepared_data)} thẻ")
+                    self.lbl_ready.setText(t("preview_ready", count=len(self.prepared_data)))
         except Exception as e:
             logger.warning("Lỗi khôi phục flow state: %s", e)
 
@@ -251,29 +261,35 @@ class AnkiSmartFactory(QDialog):
         root.setContentsMargins(10, 6, 10, 10)
         root.setSpacing(8)
 
-        # ── TOP TOOLBAR: giao diện + chia cửa sổ ─────────
+        # ── TOP TOOLBAR: giao diện + ngôn ngữ + chia cửa sổ ─────────
         top = QHBoxLayout()
         top.setSpacing(6)
-        lbl_brand = QLabel("🧊 AnkiTool Glass")
-        lbl_brand.setStyleSheet("font-size:14px;font-weight:bold;")
-        top.addWidget(lbl_brand)
+        self.lbl_brand = QLabel(t("brand_label"))
+        self.lbl_brand.setStyleSheet("font-size:14px;font-weight:bold;")
+        top.addWidget(self.lbl_brand)
 
-        btn_theme = QPushButton("🎨 Giao diện")
-        btn_theme.setProperty("class", "primary")
-        btn_theme.setToolTip("Tùy chỉnh giao diện glassmorphism (theme, màu nhấn, độ trong, cỡ chữ, bo góc)")
-        btn_theme.clicked.connect(self._open_theme_dialog)
-        top.addWidget(btn_theme)
+        self.btn_theme = QPushButton(t("btn_theme"))
+        self.btn_theme.setProperty("class", "primary")
+        self.btn_theme.setToolTip(t("btn_theme_tip"))
+        self.btn_theme.clicked.connect(self._open_theme_dialog)
+        top.addWidget(self.btn_theme)
 
-        btn_snap_max = QPushButton("⛶ Phóng to")
-        btn_snap_max.setProperty("class", "ghost")
-        btn_snap_max.setToolTip("Phóng to toàn màn hình")
-        btn_snap_max.clicked.connect(lambda: snap_maximize(self))
-        top.addWidget(btn_snap_max)
+        self.btn_lang_toggle = QPushButton(t("btn_lang_toggle"))
+        self.btn_lang_toggle.setProperty("class", "ghost")
+        self.btn_lang_toggle.setToolTip(t("btn_lang_toggle_tip"))
+        self.btn_lang_toggle.clicked.connect(self._toggle_ui_language)
+        top.addWidget(self.btn_lang_toggle)
+
+        self.btn_snap_max = QPushButton(t("btn_snap_max"))
+        self.btn_snap_max.setProperty("class", "ghost")
+        self.btn_snap_max.setToolTip(t("btn_snap_max_tip"))
+        self.btn_snap_max.clicked.connect(lambda: snap_maximize(self))
+        top.addWidget(self.btn_snap_max)
 
         top.addStretch()
-        lbl_tip = QLabel("💡 Kéo phân cách giữa 2 cột")
-        lbl_tip.setProperty("class", "dim")
-        top.addWidget(lbl_tip)
+        self.lbl_tip = QLabel(t("lbl_tip"))
+        self.lbl_tip.setProperty("class", "dim")
+        top.addWidget(self.lbl_tip)
         root.addLayout(top)
 
         # ── MAIN SPLITTER (chia đôi, kéo thả 3:7, thích ứng) ──
@@ -286,7 +302,7 @@ class AnkiSmartFactory(QDialog):
         left.setSpacing(6)
 
         # Language selector
-        self.lang_grp = QGroupBox("🌐 Ngôn ngữ")
+        self.lang_grp = QGroupBox(t("lang_grp_title"))
         lang_layout = QHBoxLayout()
 
         self.btn_lang = {}
@@ -301,9 +317,9 @@ class AnkiSmartFactory(QDialog):
         left.addWidget(self.lang_grp)
 
         # Mode selector: Từ vựng / Ngữ pháp
-        mode_grp = QGroupBox("📚 Loại Thẻ")
+        self.mode_grp = QGroupBox(t("mode_grp_title"))
         mode_layout = QHBoxLayout()
-        self.btn_mode_vocab = QPushButton("📖 Từ vựng")
+        self.btn_mode_vocab = QPushButton(t("btn_mode_vocab"))
         self.btn_mode_vocab.setCheckable(True)
         self.btn_mode_vocab.setChecked(True)
         self.btn_mode_vocab.setStyleSheet(
@@ -313,7 +329,7 @@ class AnkiSmartFactory(QDialog):
         )
         self.btn_mode_vocab.clicked.connect(lambda checked: self._select_mode(False))
         mode_layout.addWidget(self.btn_mode_vocab)
-        self.btn_mode_grammar = QPushButton("📘 Ngữ pháp")
+        self.btn_mode_grammar = QPushButton(t("btn_mode_grammar"))
         self.btn_mode_grammar.setCheckable(True)
         self.btn_mode_grammar.setStyleSheet(
             "padding:8px;font-weight:bold;border-radius:10px;"
@@ -322,59 +338,54 @@ class AnkiSmartFactory(QDialog):
         )
         self.btn_mode_grammar.clicked.connect(lambda checked: self._select_mode(True))
         mode_layout.addWidget(self.btn_mode_grammar)
-        mode_grp.setLayout(mode_layout)
-        left.addWidget(mode_grp)
+        self.mode_grp.setLayout(mode_layout)
+        left.addWidget(self.mode_grp)
 
         # Deck + file
         bar = QHBoxLayout()
         self.deck_chooser = QComboBox()
         self.deck_chooser.addItems(mw.col.decks.all_names())
-        bar.addWidget(QLabel("📦 Deck:"), 0)
+        self.lbl_deck = QLabel(t("deck_label"))
+        bar.addWidget(self.lbl_deck, 0)
         bar.addWidget(self.deck_chooser, 1)
-        btn_refresh_deck = QPushButton("🔄")
-        btn_refresh_deck.setToolTip("Làm mới danh sách deck từ Anki")
-        btn_refresh_deck.setMaximumWidth(36)
-        btn_refresh_deck.clicked.connect(self._refresh_deck_chooser)
-        bar.addWidget(btn_refresh_deck, 0)
-        btn_manage_deck = QPushButton("🗂️ Quản Lý Deck")
-        btn_manage_deck.setProperty("class", "info")
-        btn_manage_deck.setToolTip(
-            "Tạo, đổi tên, xóa Parent/Sub Deck ngay trong add-on.\n"
-            "Mọi thay đổi được đồng bộ tức thì vào Anki."
-        )
-        btn_manage_deck.clicked.connect(self._open_deck_manager)
-        bar.addWidget(btn_manage_deck, 0)
-        btn_load = QPushButton("📁 MỞ FILE (JSON/TXT)")
-        btn_load.setProperty("class", "info")
-        btn_load.clicked.connect(self._load_from_file)
-        bar.addWidget(btn_load, 0)
+        self.btn_refresh_deck = QPushButton("🔄")
+        self.btn_refresh_deck.setToolTip(t("btn_refresh_deck_tip"))
+        self.btn_refresh_deck.setMaximumWidth(36)
+        self.btn_refresh_deck.clicked.connect(self._refresh_deck_chooser)
+        bar.addWidget(self.btn_refresh_deck, 0)
+        self.btn_manage_deck = QPushButton(t("deck_manage_btn"))
+        self.btn_manage_deck.setProperty("class", "info")
+        self.btn_manage_deck.setToolTip(t("btn_manage_deck_tip"))
+        self.btn_manage_deck.clicked.connect(self._open_deck_manager)
+        bar.addWidget(self.btn_manage_deck, 0)
+        self.btn_load = QPushButton(t("open_file_btn"))
+        self.btn_load.setProperty("class", "info")
+        self.btn_load.clicked.connect(self._load_from_file)
+        bar.addWidget(self.btn_load, 0)
         left.addLayout(bar)
 
         # Sample buttons
         bar2 = QHBoxLayout()
-        self.btn_sample = QPushButton("💡 Xem mẫu JSON")
+        self.btn_sample = QPushButton(t("sample_json_btn"))
         self.btn_sample.setProperty("class", "ghost")
         self.btn_sample.clicked.connect(self._show_sample_json)
         bar2.addWidget(self.btn_sample)
-        self.btn_history = QPushButton("📚 Lịch Sử AI")
+        self.btn_history = QPushButton(t("btn_history"))
         self.btn_history.setProperty("class", "ghost")
-        self.btn_history.setToolTip(
-            "Xem lại lịch sử từ vựng đã lưu (AI trích xuất / import) — xem được ngay cả sau khi đóng Factory.\n"
-            "Tích chọn các từ cần và bấm 'Đưa Vào Xưởng' để Kiểm Định & xuất xưởng lại."
-        )
+        self.btn_history.setToolTip(t("btn_history_tip"))
         self.btn_history.clicked.connect(self._open_history_browser)
         bar2.addWidget(self.btn_history)
         bar2.addStretch()
         left.addLayout(bar2)
 
         # ── AI Trích Xuất Từ Vựng ──────────────────────────
-        ai_grp = QGroupBox("🤖 AI Trích Xuất Từ Vựng (OpenAI / DeepSeek / Ollama)")
+        self.ai_grp = QGroupBox(t("ai_group_title"))
         ai_main = QVBoxLayout()
 
         # Row 1: Buttons
         ai_bar = QHBoxLayout()
 
-        self.btn_ai_settings = QPushButton("⚙️ Cài Đặt API")
+        self.btn_ai_settings = QPushButton(t("ai_settings_btn"))
         self.btn_ai_settings.setStyleSheet(
             "padding:5px 8px;background:#8e44ad;color:white;"
             "font-weight:bold;border-radius:6px;border:none;"
@@ -382,7 +393,7 @@ class AnkiSmartFactory(QDialog):
         self.btn_ai_settings.clicked.connect(self._show_ai_settings)
         ai_bar.addWidget(self.btn_ai_settings)
 
-        self.btn_ai_clear_text = QPushButton("🗑 Xóa Text")
+        self.btn_ai_clear_text = QPushButton(t("ai_clear_text_btn"))
         self.btn_ai_clear_text.setStyleSheet(
             "padding:5px 8px;background:#95a5a6;color:white;"
             "font-weight:bold;border-radius:6px;border:none;"
@@ -390,7 +401,7 @@ class AnkiSmartFactory(QDialog):
         self.btn_ai_clear_text.clicked.connect(self._ai_clear_text)
         ai_bar.addWidget(self.btn_ai_clear_text)
 
-        self.btn_ai_extract = QPushButton("🤖 AI Trích Xuất")
+        self.btn_ai_extract = QPushButton(t("ai_extract_btn"))
         self.btn_ai_extract.setStyleSheet(
             "padding:5px 10px;background:#e67e22;color:white;"
             "font-weight:bold;border-radius:6px;border:none;font-size:13px;"
@@ -399,38 +410,32 @@ class AnkiSmartFactory(QDialog):
         self.btn_ai_extract.setEnabled(True)
         ai_bar.addWidget(self.btn_ai_extract)
 
-        self.btn_ai_batch = QPushButton("📋 Batch Từ Vựng")
+        self.btn_ai_batch = QPushButton(t("ai_batch_btn"))
         self.btn_ai_batch.setStyleSheet(
             "padding:5px 8px;background:#2ecc71;color:white;"
             "font-weight:bold;border-radius:6px;border:none;font-size:12px;"
         )
-        self.btn_ai_batch.setToolTip(
-            "Xử lý danh sách từ vựng LỚN (hàng trăm/hàng nghìn từ).\n"
-            "AI sẽ làm giàu từng từ + tự động tổ chức Parent/Sub Deck theo chủ đề."
-        )
+        self.btn_ai_batch.setToolTip(t("btn_ai_batch_tip"))
         self.btn_ai_batch.clicked.connect(self._ai_batch_process)
         self.btn_ai_batch.setEnabled(True)
         ai_bar.addWidget(self.btn_ai_batch)
 
-        self.btn_ai_chat = QPushButton("💬 Gửi")
+        self.btn_ai_chat = QPushButton(t("ai_chat_btn"))
         self.btn_ai_chat.setStyleSheet(
             "padding:5px 10px;background:#2980b9;color:white;"
             "font-weight:bold;border-radius:6px;border:none;font-size:13px;"
         )
-        self.btn_ai_chat.setToolTip(
-            "Gửi câu hỏi/yêu cầu đến AI. AI sẽ làm việc thông minh với hệ thống Anki,\n"
-            "chỉ truy vấn những gì cần thiết, không quét toàn bộ database."
-        )
+        self.btn_ai_chat.setToolTip(t("btn_ai_chat_tip"))
         self.btn_ai_chat.clicked.connect(self._ai_chat)
         self.btn_ai_chat.setEnabled(True)
         ai_bar.addWidget(self.btn_ai_chat)
 
-        self.btn_ai_stop = QPushButton("⏹ Dừng")
+        self.btn_ai_stop = QPushButton(t("ai_stop_btn"))
         self.btn_ai_stop.setStyleSheet(
             "padding:5px 8px;background:#e74c3c;color:white;"
             "font-weight:bold;border-radius:6px;border:none;font-size:12px;"
         )
-        self.btn_ai_stop.setToolTip("Dừng yêu cầu AI đang chạy")
+        self.btn_ai_stop.setToolTip(t("btn_ai_stop_tip"))
         self.btn_ai_stop.clicked.connect(self._cancel_ai_chat)
         self.btn_ai_stop.setVisible(False)
         ai_bar.addWidget(self.btn_ai_stop)
@@ -443,25 +448,21 @@ class AnkiSmartFactory(QDialog):
 
         # Row 1b: Đính kèm file tài liệu tham khảo cho AI
         file_bar = QHBoxLayout()
-        self.btn_ai_attach = QPushButton("📎 Kẹp File")
+        self.btn_ai_attach = QPushButton(t("btn_ai_attach"))
         self.btn_ai_attach.setStyleSheet(
             "padding:5px 12px;background:#16a085;color:white;"
             "font-weight:bold;border-radius:6px;border:none;"
         )
-        self.btn_ai_attach.setToolTip(
-            "Đính kèm file tài liệu tham khảo (TXT/MD/DOCX/PDF/XLSX/CSV).\n"
-            "AI sẽ đọc nội dung file để trích xuất từ vựng / ngữ pháp.\n"
-            "Lưu ý: DeepSeek chỉ nhận TEXT → add-on tự trích text từ file tại máy."
-        )
+        self.btn_ai_attach.setToolTip(t("btn_ai_attach_tip"))
         self.btn_ai_attach.clicked.connect(self._attach_ai_files)
         file_bar.addWidget(self.btn_ai_attach)
 
-        self.btn_ai_attach_clear = QPushButton("🧹 Bỏ File")
+        self.btn_ai_attach_clear = QPushButton(t("btn_ai_attach_clear"))
         self.btn_ai_attach_clear.setStyleSheet(
             "padding:5px 12px;background:#95a5a6;color:white;"
             "font-weight:bold;border-radius:6px;border:none;"
         )
-        self.btn_ai_attach_clear.setToolTip("Bỏ toàn bộ file đã kẹp và xóa nội dung trong ô AI")
+        self.btn_ai_attach_clear.setToolTip(t("btn_ai_attach_clear_tip"))
         self.btn_ai_attach_clear.clicked.connect(self._clear_ai_files)
         file_bar.addWidget(self.btn_ai_attach_clear)
 
@@ -473,98 +474,104 @@ class AnkiSmartFactory(QDialog):
 
         # Row 2: Text input area for AI
         self.ai_text_input = QPlainTextEdit()
-        self.ai_text_input.setPlaceholderText("📝 Dán văn bản vào đây (300-800 ký tự là tối ưu nhất, ~50-100 từ). Hỗ trợ tiếng Nhật & tiếng Trung.")
+        self.ai_text_input.setPlaceholderText(t("ai_input_placeholder_vocab"))
         self.ai_text_input.setMaximumHeight(80)
         self.ai_text_input.setStyleSheet("font-size:12px;")
         ai_main.addWidget(self.ai_text_input)
 
         # Row 3: Custom instruction
         instr_bar = QHBoxLayout()
-        instr_bar.addWidget(QLabel("💬 Lời nhắn:"))
+        self.lbl_instruction = QLabel(t("ai_instruction_label"))
+        instr_bar.addWidget(self.lbl_instruction)
         self.ai_instruction = QLineEdit()
-        self.ai_instruction.setPlaceholderText("VD: Chỉ lấy từ HSK3+, chủ đề ẩm thực, ưu tiên từ khó...")
+        self.ai_instruction.setPlaceholderText(t("ai_instruction_placeholder"))
         self.ai_instruction.setStyleSheet("font-size:12px;padding:4px;")
         instr_bar.addWidget(self.ai_instruction, 1)
         ai_main.addLayout(instr_bar)
 
-        ai_grp.setLayout(ai_main)
-        left.addWidget(ai_grp)
+        self.ai_grp.setLayout(ai_main)
+        left.addWidget(self.ai_grp)
 
-        left.addWidget(QLabel("📝 Dán dữ liệu JSON (hỗ trợ array hoặc multiple objects):"))
+        self.lbl_json_label = QLabel(t("json_input_label"))
+        left.addWidget(self.lbl_json_label)
         self.json_input = QPlainTextEdit()
         self.json_input.textChanged.connect(self._schedule_analyze)
         left.addWidget(self.json_input)
 
         # Filters
-        self.filter_grp = QGroupBox("⚙️ Bộ Lọc & Gác Cổng V5+")
+        self.filter_grp = QGroupBox(t("filter_group_title"))
         gl = QGridLayout()
 
-        self.lbl_raw = QLabel("📊 Kho hàng: 0 mục")
+        self.lbl_raw = QLabel(t("filter_raw_count", count=0))
         self.lbl_raw.setStyleSheet("color:#e67e22;font-weight:bold;")
         gl.addWidget(self.lbl_raw, 0, 0, 1, 2)
 
-        self.lbl_level = QLabel("🎓 Cấp độ:")
+        self.lbl_level = QLabel(t("filter_level_label"))
         self.cbo_level = QComboBox()
         gl.addWidget(self.lbl_level, 1, 0)
         gl.addWidget(self.cbo_level, 1, 1)
 
         self.txt_topic = QLineEdit()
-        self.txt_topic.setPlaceholderText("Lọc theo topic...")
-        gl.addWidget(QLabel("🔍 Topic:"), 2, 0)
+        self.txt_topic.setPlaceholderText(t("filter_topic_placeholder"))
+        self.lbl_topic = QLabel(t("filter_topic_label"))
+        gl.addWidget(self.lbl_topic, 2, 0)
         gl.addWidget(self.txt_topic, 2, 1)
 
         audio_box = QHBoxLayout()
-        self.chk_audio_vocab = QCheckBox("🎵 Vocab")
+        self.chk_audio_vocab = QCheckBox(t("filter_audio_vocab"))
         self.chk_audio_vocab.setChecked(True)
-        self.chk_audio_ex1 = QCheckBox("🎵 Ví dụ 1")
+        self.chk_audio_ex1 = QCheckBox(t("filter_audio_ex1"))
         self.chk_audio_ex1.setChecked(True)
-        self.chk_audio_ex2 = QCheckBox("🎵 Ví dụ 2")
+        self.chk_audio_ex2 = QCheckBox(t("filter_audio_ex2"))
         self.chk_audio_ex2.setChecked(True)
         for c in (self.chk_audio_vocab, self.chk_audio_ex1, self.chk_audio_ex2):
             audio_box.addWidget(c)
-        gl.addWidget(QLabel("🔊 Auto Audio:"), 3, 0)
+        self.lbl_audio = QLabel(t("filter_audio_label"))
+        gl.addWidget(self.lbl_audio, 3, 0)
         gl.addLayout(audio_box, 3, 1)
 
-        btn_verify = QPushButton("🌪️ Kiểm Định")
-        btn_verify.setProperty("class", "warning")
-        btn_verify.setMinimumHeight(42)
-        btn_verify.setToolTip("Kiểm định lô hàng — kiểm tra trùng lặp, cập nhật, từ mới")
-        btn_verify.clicked.connect(self._verify_batch)
+        self.btn_verify = QPushButton(t("btn_verify"))
+        self.btn_verify.setProperty("class", "warning")
+        self.btn_verify.setMinimumHeight(42)
+        self.btn_verify.setToolTip(t("btn_verify_tip"))
+        self.btn_verify.clicked.connect(self._verify_batch)
 
-        btn_rebuild = QPushButton("🔨 Tái Tạo Model")
-        btn_rebuild.setProperty("class", "purple")
-        btn_rebuild.setMinimumHeight(42)
-        btn_rebuild.setToolTip("Tái tạo / cập nhật Model Note (template, CSS, fields)")
-        btn_rebuild.clicked.connect(self._force_rebuild_model)
+        self.btn_rebuild = QPushButton(t("btn_rebuild"))
+        self.btn_rebuild.setProperty("class", "purple")
+        self.btn_rebuild.setMinimumHeight(42)
+        self.btn_rebuild.setToolTip(t("btn_rebuild_tip"))
+        self.btn_rebuild.clicked.connect(self._force_rebuild_model)
 
-        self.btn_diff_meaning = QPushButton("🔍 Nghĩa Khác")
+        self.btn_diff_meaning = QPushButton(t("btn_diff_meaning"))
         self.btn_diff_meaning.setProperty("class", "warning")
         self.btn_diff_meaning.setMinimumHeight(42)
         self.btn_diff_meaning.setEnabled(False)
-        self.btn_diff_meaning.setToolTip("Xem các từ vựng có cùng mặt chữ nhưng khác nghĩa để xác nhận thêm")
+        self.btn_diff_meaning.setToolTip(t("btn_diff_meaning_tip"))
         self.btn_diff_meaning.clicked.connect(self._show_diff_meaning_report)
 
         # Hàng ngang 3 nút
         action_bar = QHBoxLayout()
-        action_bar.addWidget(btn_verify, 1)
-        action_bar.addWidget(btn_rebuild, 1)
+        action_bar.addWidget(self.btn_verify, 1)
+        action_bar.addWidget(self.btn_rebuild, 1)
         action_bar.addWidget(self.btn_diff_meaning, 1)
         gl.addLayout(action_bar, 4, 0, 1, 2)
 
         # ── Voice Selection ───────────────────────────────
-        voice_grp = QGroupBox("🎤 Chọn Giọng Đọc & Tốc Độ")
+        self.voice_grp = QGroupBox(t("voice_group_title"))
         vgl = QHBoxLayout()
-        vgl.addWidget(QLabel("Giọng:"), 0)
+        self.lbl_voice = QLabel(t("voice_label"))
+        vgl.addWidget(self.lbl_voice, 0)
         self.cbo_voice = QComboBox()
         self.cbo_voice.setMinimumWidth(150)
         self.cbo_voice.currentIndexChanged.connect(self._on_voice_changed)
         vgl.addWidget(self.cbo_voice, 1)
-        self.btn_preview_voice = QPushButton("▶ Nghe thử")
+        self.btn_preview_voice = QPushButton(t("voice_preview_btn"))
         self.btn_preview_voice.setProperty("class", "purple")
         self.btn_preview_voice.clicked.connect(self._preview_voice)
         vgl.addWidget(self.btn_preview_voice, 0)
         vgl.addSpacing(12)
-        vgl.addWidget(QLabel("⏩ Tốc độ:"), 0)
+        self.lbl_speed = QLabel(t("voice_speed_label"))
+        vgl.addWidget(self.lbl_speed, 0)
         self.spin_speed = QDoubleSpinBox()
         self.spin_speed.setRange(0.25, 4.0)
         self.spin_speed.setSingleStep(0.05)
@@ -572,18 +579,19 @@ class AnkiSmartFactory(QDialog):
         self.spin_speed.setSuffix(" ×")
         self.spin_speed.setValue(1.0)
         self.spin_speed.setMinimumWidth(70)
-        self.spin_speed.setToolTip("Tốc độ phát audio mặc định cho thẻ học\n(0.25× = chậm nhất, 4.0× = nhanh nhất)")
+        self.spin_speed.setToolTip(t("spin_speed_tip"))
         self.spin_speed.valueChanged.connect(self._on_speed_changed)
         vgl.addWidget(self.spin_speed, 0)
         # ── Chế độ học mặc định (đồng bộ với Study now của Onigiri) ──
         vgl.addSpacing(12)
-        vgl.addWidget(QLabel("🎯 Mode:"), 0)
+        self.lbl_study_mode = QLabel(t("study_mode_label"))
+        vgl.addWidget(self.lbl_study_mode, 0)
         self.cbo_study_mode = QComboBox()
         self.cbo_study_mode.setMinimumWidth(130)
         self.cbo_study_mode.currentIndexChanged.connect(self._on_study_mode_changed)
         vgl.addWidget(self.cbo_study_mode, 0)
-        voice_grp.setLayout(vgl)
-        left.addWidget(voice_grp)
+        self.voice_grp.setLayout(vgl)
+        left.addWidget(self.voice_grp)
 
         self.main_splitter.addWidget(left_panel)
 
@@ -597,17 +605,18 @@ class AnkiSmartFactory(QDialog):
         self.filter_grp.setLayout(gl)
         right.addWidget(self.filter_grp)
 
-        right.addWidget(QLabel("📋 Thẻ chờ xuất xưởng (✨ New | 🔄 Update | ⚠️ Trùng mờ):"))
+        self.lbl_preview_title = QLabel(t("preview_label"))
+        right.addWidget(self.lbl_preview_title)
 
         # ── Tìm kiếm + lọc nhanh theo loại thẻ ──
         sf = QHBoxLayout()
         self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("🔍 Tìm theo từ / nghĩa... (lọc trực tiếp)")
+        self.txt_search.setPlaceholderText(t("search_placeholder"))
         self.txt_search.textChanged.connect(self._rebuild_preview)
         sf.addWidget(self.txt_search, 1)
         self.cbo_filter = QComboBox()
-        self.cbo_filter.addItems(["📂 Tất cả", "✨ Mới", "🔄 Cập nhật", "⚠️ Trùng mờ", "🔍 Nghĩa khác"])
-        self.cbo_filter.setToolTip("Lọc nhanh theo loại thẻ sau khi Kiểm Định")
+        self._repopulate_filter_combo()
+        self.cbo_filter.setToolTip(t("cbo_filter_tip"))
         self.cbo_filter.currentIndexChanged.connect(self._rebuild_preview)
         sf.addWidget(self.cbo_filter, 0)
         right.addLayout(sf)
@@ -619,16 +628,16 @@ class AnkiSmartFactory(QDialog):
 
         # ── Nút chọn nhanh + số thẻ đã chọn ──
         sel = QHBoxLayout()
-        self.btn_select_all = QPushButton("✅ Chọn Tất Cả")
-        self.btn_select_all.setToolTip("Tích chọn tất cả thẻ đang hiển thị (theo bộ lọc)")
+        self.btn_select_all = QPushButton(t("btn_select_all"))
+        self.btn_select_all.setToolTip(t("btn_select_all_tip"))
         self.btn_select_all.clicked.connect(self._select_all_visible)
         sel.addWidget(self.btn_select_all)
-        self.btn_select_none = QPushButton("☐ Bỏ Chọn")
-        self.btn_select_none.setToolTip("Bỏ chọn tất cả thẻ đang hiển thị")
+        self.btn_select_none = QPushButton(t("btn_select_none"))
+        self.btn_select_none.setToolTip(t("btn_select_none_tip"))
         self.btn_select_none.clicked.connect(self._select_none_visible)
         sel.addWidget(self.btn_select_none)
         sel.addStretch()
-        self.lbl_sel = QLabel("☑️ Đã chọn: 0/0 thẻ")
+        self.lbl_sel = QLabel(t("lbl_sel_count", selected=0, total=0))
         self.lbl_sel.setStyleSheet("color:#2980b9;font-weight:bold;")
         sel.addWidget(self.lbl_sel)
         right.addLayout(sel)
@@ -636,21 +645,24 @@ class AnkiSmartFactory(QDialog):
         rng = QHBoxLayout()
         self.spin_start = QSpinBox()
         self.spin_start.setRange(1, 9999)
-        self.spin_start.setToolTip("Thay đổi khoảng sẽ TỰ ĐỘNG tích chọn các thẻ trong khoảng đó")
+        self.spin_start.setToolTip(t("rng_tip"))
         self.spin_start.valueChanged.connect(self._on_range_changed)
         self.spin_end = QSpinBox()
         self.spin_end.setRange(1, 9999)
-        self.spin_end.setToolTip("Thay đổi khoảng sẽ TỰ ĐỘNG tích chọn các thẻ trong khoảng đó")
+        self.spin_end.setToolTip(t("rng_tip"))
         self.spin_end.valueChanged.connect(self._on_range_changed)
-        rng.addWidget(QLabel("🔢 Từ số:"))
+        self.lbl_rng_from = QLabel(t("rng_from_label"))
+        self.lbl_rng_to = QLabel(t("rng_to_label"))
+        self.lbl_rng_hint = QLabel(t("rng_hint"))
+        rng.addWidget(self.lbl_rng_from)
         rng.addWidget(self.spin_start)
-        rng.addWidget(QLabel("đến:"))
+        rng.addWidget(self.lbl_rng_to)
         rng.addWidget(self.spin_end)
-        rng.addWidget(QLabel("(đổi khoảng = tự tích chọn)"))
+        rng.addWidget(self.lbl_rng_hint)
         rng.addStretch()
         right.addLayout(rng)
 
-        self.lbl_ready = QLabel("✅ Sẵn sàng: 0 thẻ")
+        self.lbl_ready = QLabel(t("preview_ready", count=0))
         self.lbl_ready.setStyleSheet("color:#27ae60;font-weight:bold;")
         right.addWidget(self.lbl_ready)
 
@@ -662,7 +674,7 @@ class AnkiSmartFactory(QDialog):
         self.lbl_status.setProperty("class", "dim")
         right.addWidget(self.lbl_status)
 
-        self.btn_import = QPushButton("🚀 XUẤT XƯỞNG (IMPORT)")
+        self.btn_import = QPushButton(t("btn_import"))
         self.btn_import.setProperty("class", "success")
         self.btn_import.setMinimumHeight(52)
         self.btn_import.setEnabled(False)
@@ -670,19 +682,16 @@ class AnkiSmartFactory(QDialog):
         right.addWidget(self.btn_import)
 
         op_row = QHBoxLayout()
-        self.btn_cancel = QPushButton("⏹️ DỪNG LẠI")
+        self.btn_cancel = QPushButton(t("btn_cancel"))
         self.btn_cancel.setProperty("class", "danger")
         self.btn_cancel.setVisible(False)
         self.btn_cancel.clicked.connect(self._cancel_import)
         op_row.addWidget(self.btn_cancel)
-        self.btn_cancel_order = QPushButton("🧹 Hủy Hàng (Xóa Thẻ Trong Xưởng)")
+        self.btn_cancel_order = QPushButton(t("btn_cancel_order"))
         self.btn_cancel_order.setProperty("class", "danger")
         self.btn_cancel_order.setMinimumHeight(40)
         self.btn_cancel_order.setEnabled(False)
-        self.btn_cancel_order.setToolTip(
-            "Chỉ xóa thẻ KHỎI XƯỞNG (danh sách chờ xuất xưởng) — không ảnh hưởng tới Anki.\n"
-            "Thẻ trong xưởng được lưu lại ngay cả khi đóng cửa sổ; chỉ mất khi bấm Hủy Hàng."
-        )
+        self.btn_cancel_order.setToolTip(t("btn_cancel_order_tip"))
         self.btn_cancel_order.clicked.connect(self._cancel_order)
         op_row.addWidget(self.btn_cancel_order)
         right.addLayout(op_row)
@@ -697,6 +706,148 @@ class AnkiSmartFactory(QDialog):
 
         # Áp theme glassmorphism
         self._theme_cfg = apply_theme(self, self._theme_cfg)
+
+        # Đồng bộ toàn bộ chuỗi hiển thị theo ngôn ngữ UI hiện tại
+        self._retranslate_ui()
+
+    def _toggle_ui_language(self):
+        """Chuyển ngôn ngữ giao diện giữa Tiếng Việt ⇄ English (mượt mà, không đóng cửa sổ)."""
+        try:
+            toggle_language()
+            # _retranslate_ui được gọi tự động qua listener trong set_language
+        except Exception as e:
+            logger.warning("Lỗi chuyển ngôn ngữ: %s", e)
+
+    def _update_window_title(self):
+        """Cập nhật tiêu đề cửa sổ theo ngôn ngữ ngôn ngữ học + hậu tố Ngữ pháp."""
+        try:
+            cfg = self._cfg()
+            base = f"AnkiTool Multi-Lang V17.0 — {cfg['label']}"
+            if self._is_grammar:
+                base += t("grammar_suffix")
+            self.setWindowTitle(base)
+        except Exception as e:
+            logger.warning("Lỗi cập nhật tiêu đề: %s", e)
+
+    def _repopulate_filter_combo(self):
+        """Điền lại các mục lọc thẻ theo ngôn ngữ UI hiện tại (giữ nguyên lựa chọn)."""
+        try:
+            current = self.cbo_filter.currentText() if hasattr(self, 'cbo_filter') else ""
+            items = [
+                t("cbo_filter_all"), t("cbo_filter_new"), t("cbo_filter_update"),
+                t("cbo_filter_conflict"), t("cbo_filter_diff"),
+            ]
+            self.cbo_filter.blockSignals(True)
+            self.cbo_filter.clear()
+            self.cbo_filter.addItems(items)
+            if current in items:
+                self.cbo_filter.setCurrentText(current)
+            self.cbo_filter.blockSignals(False)
+        except Exception as e:
+            logger.warning("Lỗi repopulate filter combo: %s", e)
+
+    def _retranslate_ui(self):
+        """Cập nhật toàn bộ chuỗi hiển thị theo ngôn ngữ UI hiện tại (live refresh)."""
+        try:
+            # Toolbar
+            self.lbl_brand.setText(t("brand_label"))
+            self.btn_theme.setText(t("btn_theme"))
+            self.btn_theme.setToolTip(t("btn_theme_tip"))
+            self.btn_lang_toggle.setText(t("btn_lang_toggle"))
+            self.btn_lang_toggle.setToolTip(t("btn_lang_toggle_tip"))
+            self.btn_snap_max.setText(t("btn_snap_max"))
+            self.btn_snap_max.setToolTip(t("btn_snap_max_tip"))
+            self.lbl_tip.setText(t("lbl_tip"))
+
+            # Selectors
+            self.lang_grp.setTitle(self._cfg()["label"])
+            self.mode_grp.setTitle(t("mode_grp_title"))
+            self.btn_mode_vocab.setText(t("btn_mode_vocab"))
+            self.btn_mode_grammar.setText(t("btn_mode_grammar"))
+            self.lbl_deck.setText(t("deck_label"))
+            self.btn_refresh_deck.setToolTip(t("btn_refresh_deck_tip"))
+            self.btn_manage_deck.setText(t("deck_manage_btn"))
+            self.btn_manage_deck.setToolTip(t("btn_manage_deck_tip"))
+            self.btn_load.setText(t("open_file_btn"))
+            self.btn_sample.setText(t("sample_json_btn"))
+            self.btn_history.setText(t("btn_history"))
+            self.btn_history.setToolTip(t("btn_history_tip"))
+
+            # AI group
+            self.ai_grp.setTitle(t("ai_group_title"))
+            self.btn_ai_settings.setText(t("ai_settings_btn"))
+            self.btn_ai_clear_text.setText(t("ai_clear_text_btn"))
+            self.btn_ai_extract.setText(t("ai_extract_btn"))
+            self.btn_ai_batch.setText(t("ai_batch_btn"))
+            self.btn_ai_batch.setToolTip(t("btn_ai_batch_tip"))
+            self.btn_ai_chat.setText(t("ai_chat_btn"))
+            self.btn_ai_chat.setToolTip(t("btn_ai_chat_tip"))
+            self.btn_ai_stop.setText(t("ai_stop_btn"))
+            self.btn_ai_stop.setToolTip(t("btn_ai_stop_tip"))
+            self.btn_ai_attach.setText(t("btn_ai_attach"))
+            self.btn_ai_attach.setToolTip(t("btn_ai_attach_tip"))
+            self.btn_ai_attach_clear.setText(t("btn_ai_attach_clear"))
+            self.btn_ai_attach_clear.setToolTip(t("btn_ai_attach_clear_tip"))
+            self.lbl_instruction.setText(t("ai_instruction_label"))
+            self.ai_instruction.setPlaceholderText(t("ai_instruction_placeholder"))
+            self.lbl_json_label.setText(t("json_input_label"))
+
+            # Filters
+            self.filter_grp.setTitle(t("filter_group_title"))
+            self.lbl_topic.setText(t("filter_topic_label"))
+            self.txt_topic.setPlaceholderText(t("filter_topic_placeholder"))
+            self.lbl_audio.setText(t("filter_audio_label"))
+            self.chk_audio_vocab.setText(t("filter_audio_vocab"))
+            self.chk_audio_ex1.setText(t("filter_audio_ex1"))
+            self.chk_audio_ex2.setText(t("filter_audio_ex2"))
+            self.btn_verify.setText(t("btn_verify"))
+            self.btn_verify.setToolTip(t("btn_verify_tip"))
+            self.btn_rebuild.setText(t("btn_rebuild"))
+            self.btn_rebuild.setToolTip(t("btn_rebuild_tip"))
+            self.btn_diff_meaning.setText(t("btn_diff_meaning"))
+            self.btn_diff_meaning.setToolTip(t("btn_diff_meaning_tip"))
+
+            # Voice
+            self.voice_grp.setTitle(t("voice_group_title"))
+            self.lbl_voice.setText(t("voice_label"))
+            self.lbl_speed.setText(t("voice_speed_label"))
+            self.lbl_study_mode.setText(t("study_mode_label"))
+            self.btn_preview_voice.setText(t("voice_preview_btn"))
+            self.spin_speed.setToolTip(t("spin_speed_tip"))
+            self.chk_audio_vocab.setToolTip(t("voice_tooltip"))
+            self.chk_audio_ex1.setToolTip(t("voice_tooltip"))
+            self.chk_audio_ex2.setToolTip(t("voice_tooltip"))
+
+            # Preview area
+            self.lbl_preview_title.setText(t("preview_label"))
+            self.txt_search.setPlaceholderText(t("search_placeholder"))
+            self._repopulate_filter_combo()
+            self.cbo_filter.setToolTip(t("cbo_filter_tip"))
+            self.btn_select_all.setText(t("btn_select_all"))
+            self.btn_select_all.setToolTip(t("btn_select_all_tip"))
+            self.btn_select_none.setText(t("btn_select_none"))
+            self.btn_select_none.setToolTip(t("btn_select_none_tip"))
+            self.lbl_rng_from.setText(t("rng_from_label"))
+            self.lbl_rng_to.setText(t("rng_to_label"))
+            self.lbl_rng_hint.setText(t("rng_hint"))
+            self.spin_start.setToolTip(t("rng_tip"))
+            self.spin_end.setToolTip(t("rng_tip"))
+            self.btn_import.setText(t("btn_import"))
+            self.btn_cancel.setText(t("btn_cancel"))
+            self.btn_cancel_order.setText(t("btn_cancel_order"))
+            self.btn_cancel_order.setToolTip(t("btn_cancel_order_tip"))
+
+            # Counts theo dữ liệu hiện tại
+            self.lbl_raw.setText(t("filter_raw_count", count=len(self.raw_data)))
+            self.lbl_ready.setText(t("preview_ready", count=len(self.prepared_data)))
+            # Dựng lại danh sách thẻ để cập nhật các hậu tố (Nghĩa khác/Cập nhật/Trùng mờ)
+            if hasattr(self, 'preview_list') and self.prepared_data:
+                self._rebuild_preview()
+            else:
+                self._update_selection_label()
+            self._update_window_title()
+        except Exception as e:
+            logger.warning("Lỗi retranslate UI: %s", e)
 
     def _open_theme_dialog(self):
         """Mở hộp thoại tùy chỉnh giao diện glassmorphism"""
@@ -794,18 +945,15 @@ class AnkiSmartFactory(QDialog):
 
         self._apply_lang_button_styles()
 
-        # Cập nhật tiêu đề group box ngôn ngữ
+        # Cập nhật tiêu đề group box ngôn ngữ + tiêu đề cửa sổ
         self.lang_grp.setTitle(cfg["label"])
-        if self._is_grammar:
-            self.setWindowTitle(f"AnkiTool Multi-Lang V17.0 — {cfg['label']} (Ngữ pháp)")
-        else:
-            self.setWindowTitle(f"AnkiTool Multi-Lang V17.0 — {cfg['label']}")
+        self._update_window_title()
 
         self.lbl_level.setText(cfg["level_label"])
         self.cbo_level.clear()
         self.cbo_level.addItems(cfg["level_choices"])
 
-        tooltip_text = "🎤 Sử dụng Edge TTS Online (cần internet, fallback gTTS)"
+        tooltip_text = t("voice_tooltip")
         self.chk_audio_vocab.setToolTip(tooltip_text)
         self.chk_audio_ex1.setToolTip(tooltip_text)
         self.chk_audio_ex2.setToolTip(tooltip_text)
@@ -813,8 +961,6 @@ class AnkiSmartFactory(QDialog):
         self.raw_data = []
         self.prepared_data = []
         self.preview_list.clear()
-        self.lbl_raw.setText("📊 Kho hàng: 0 mục")
-        self.lbl_ready.setText("✅ Sẵn sàng: 0 thẻ")
         self.btn_import.setEnabled(False)
         self.json_input.clear()
         self.btn_diff_meaning.setEnabled(False)
@@ -826,13 +972,9 @@ class AnkiSmartFactory(QDialog):
 
         # Cập nhật placeholder theo chế độ
         if self._is_grammar:
-            self.ai_text_input.setPlaceholderText(
-                "📝 Dán văn bản để trích xuất NGỮ PHÁP (cấu trúc, cách dùng, công thức, ví dụ)..."
-            )
+            self.ai_text_input.setPlaceholderText(t("ai_input_placeholder_grammar"))
         else:
-            self.ai_text_input.setPlaceholderText(
-                "📝 Dán văn bản vào đây (300-800 ký tự là tối ưu nhất, ~50-100 từ). Hỗ trợ tiếng Nhật, Trung & Hàn."
-            )
+            self.ai_text_input.setPlaceholderText(t("ai_input_placeholder_vocab"))
 
         # Sync voice dropdown với ngôn ngữ hiện tại
         lang = cfg["lang_code"]
@@ -861,6 +1003,9 @@ class AnkiSmartFactory(QDialog):
         # Khôi phục text + file kẹp cho luồng (ngôn ngữ + mode) đang hiển thị
         self._restore_current_flow()
 
+        # Đồng bộ toàn bộ chuỗi hiển thị theo ngôn ngữ UI hiện tại
+        self._retranslate_ui()
+
     def _on_voice_changed(self, index):
         lang = self._cfg()["lang_code"]
         voices = get_voice_options(lang)
@@ -874,22 +1019,9 @@ class AnkiSmartFactory(QDialog):
     def _sync_study_mode_combo(self):
         """Đồng bộ dropdown mode với cấu hình hiện tại."""
         try:
-            labels = {
-                "japanese": {
-                    "qa": "1. Nhật→Việt", "vn": "2. Việt→Nhật",
-                    "wb": "3. Ghép chữ", "pron": "4. Furigana", "lg": "5. Ẩn chữ",
-                },
-                "chinese": {
-                    "qa": "1. 中文→Việt", "vn": "2. Việt→中文",
-                    "wb": "3. Ghép chữ", "pron": "4. Pinyin", "lg": "5. Ẩn chữ",
-                },
-                "korean": {
-                    "qa": "1. 한국어→Việt", "vn": "2. Việt→한국어",
-                    "wb": "3. Ghép chữ", "pron": "4. Romanization", "lg": "5. Ẩn chữ",
-                },
-            }
             lang = self._current_lang
-            lbl = labels.get(lang, labels["japanese"])
+            # Nhãn theo ngôn ngữ UI (vi: "1. Nhật→Việt" / en: "1. Japanese→English")
+            lbl = study_mode_labels(lang)
             current = get_study_mode()
             self.cbo_study_mode.blockSignals(True)
             self.cbo_study_mode.clear()
@@ -929,7 +1061,7 @@ class AnkiSmartFactory(QDialog):
 
     def _on_preview_done(self, filepath):
         self.btn_preview_voice.setEnabled(True)
-        self.btn_preview_voice.setText("▶ Nghe thử")
+        self.btn_preview_voice.setText(t("voice_preview_btn"))
         if filepath and os.path.exists(filepath):
             try:
                 from aqt.sound import av_player
@@ -940,9 +1072,9 @@ class AnkiSmartFactory(QDialog):
                     import subprocess
                     subprocess.Popen([filepath], shell=True)
                 except Exception:
-                    tooltip("Không thể phát audio preview.")
+                    tooltip(t("tooltip_audio_preview_fail"))
         else:
-            tooltip("⚠️ Không thể tạo audio. Kiểm tra kết nối internet và edge-tts.")
+            tooltip(t("tooltip_audio_gen_fail"))
 
     def _show_sample_json(self):
         samples = {
@@ -1044,12 +1176,12 @@ class AnkiSmartFactory(QDialog):
             # Multiple sub-samples: show a combo to choose
             sub_keys = list(raw.keys())
             dlg = QDialog(self)
-            dlg.setWindowTitle(f"💡 Mẫu JSON — {self._cfg()['label']}")
+            dlg.setWindowTitle(t("sample_json_title", label=self._cfg()["label"]))
             dlg.setMinimumWidth(600)
             vl = QVBoxLayout(dlg)
 
             top_bar = QHBoxLayout()
-            top_bar.addWidget(QLabel("Chọn loại:"))
+            top_bar.addWidget(QLabel(t("choose_type_label")))
             cbo = QComboBox()
             cbo.addItems(sub_keys)
             top_bar.addWidget(cbo, 1)
@@ -1066,7 +1198,7 @@ class AnkiSmartFactory(QDialog):
 
             cbo.currentIndexChanged.connect(on_sub_changed)
 
-            btn_copy = QPushButton("📋 Copy & Đóng")
+            btn_copy = QPushButton(t("btn_copy_close"))
             btn_copy.clicked.connect(lambda: (
                 QApplication.clipboard().setText(te.toPlainText()),
                 dlg.accept()
@@ -1075,7 +1207,7 @@ class AnkiSmartFactory(QDialog):
             dlg.exec()
         else:
             dlg = QDialog(self)
-            dlg.setWindowTitle(f"💡 Mẫu JSON — {self._cfg()['label']}")
+            dlg.setWindowTitle(t("sample_json_title", label=self._cfg()["label"]))
             dlg.setMinimumWidth(600)
             vl = QVBoxLayout(dlg)
             te = QPlainTextEdit()
@@ -1084,7 +1216,7 @@ class AnkiSmartFactory(QDialog):
             te.setStyleSheet("font-family:monospace;font-size:13px;")
             vl.addWidget(te)
 
-            btn_copy = QPushButton("📋 Copy & Đóng")
+            btn_copy = QPushButton(t("btn_copy_close"))
             btn_copy.clicked.connect(lambda: (
                 QApplication.clipboard().setText(te.toPlainText()),
                 dlg.accept()
@@ -1094,14 +1226,14 @@ class AnkiSmartFactory(QDialog):
 
     def _load_from_file(self):
         path, _ = QFileDialog.getOpenFileName(
-            self, "Chọn file dữ liệu", "", "Dữ liệu (*.json *.txt)"
+            self, t("file_dialog_title"), "", t("file_dialog_filter")
         )
         if path:
             try:
                 with open(path, 'r', encoding='utf-8') as f:
                     self.json_input.setPlainText(f.read())
             except Exception as e:
-                showInfo(f"Lỗi đọc file: {e}")
+                showInfo(t("err_file_read", error=e))
 
     def _schedule_analyze(self):
         """Debounced analyze — chỉ parse JSON khi user ngừng gõ 500ms."""
@@ -1114,7 +1246,7 @@ class AnkiSmartFactory(QDialog):
         else:
             self.raw_data = safe_parse_json(raw)
 
-        self.lbl_raw.setText(f"📊 Kho hàng: {len(self.raw_data)} mục")
+        self.lbl_raw.setText(t("filter_raw_count", count=len(self.raw_data)))
 
     def _verify_batch(self):
         try:
@@ -1283,11 +1415,11 @@ class AnkiSmartFactory(QDialog):
         search = self.txt_search.text().strip().lower()
         filt = self.cbo_filter.currentText()
         action_map = {
-            "📂 Tất cả": None,
-            "✨ Mới": "add",
-            "🔄 Cập nhật": "update",
-            "⚠️ Trùng mờ": "add_partial",
-            "🔍 Nghĩa khác": "dup_diff",
+            t("cbo_filter_all"): None,
+            t("cbo_filter_new"): "add",
+            t("cbo_filter_update"): "update",
+            t("cbo_filter_conflict"): "add_partial",
+            t("cbo_filter_diff"): "dup_diff",
         }
         want_action = action_map.get(filt)
         cfg = self._cfg()
@@ -1325,11 +1457,12 @@ class AnkiSmartFactory(QDialog):
             front = str(item.get(dk, item.get('front', ''))).strip()
             icon = {"add": "✨", "add_partial": "⚠️", "update": "🔄", "dup_diff": "🔍"}.get(action, "✨")
             if action == "dup_diff" and ci:
-                suffix = f"  [🔍 Nghĩa khác: mới='{item.get('meaning','')}' ← cũ='{ci['existing_meaning']}']"
+                suffix = t("preview_suffix_dup_diff",
+                           new=item.get('meaning', ''), old=ci.get('existing_meaning', ''))
             elif action == "update" and updatable:
-                suffix = f"  [Cập nhật: {', '.join(updatable)}]"
+                suffix = t("preview_suffix_update", fields=", ".join(updatable))
             elif action == "add_partial":
-                suffix = "  [Trùng mờ — vẫn thêm]"
+                suffix = t("preview_suffix_partial")
             else:
                 suffix = ""
             li = QListWidgetItem(f"{icon} {pos}: {front} — {item.get('meaning','')}{suffix}")
@@ -1391,7 +1524,7 @@ class AnkiSmartFactory(QDialog):
             if self.preview_list.item(row).checkState() == Qt.CheckState.Checked:
                 n_checked += 1
         vis = len(getattr(self, '_visible_indices', []))
-        self.lbl_sel.setText(f"☑️ Đã chọn: {n_checked}/{vis} thẻ")
+        self.lbl_sel.setText(t("lbl_sel_count", selected=n_checked, total=vis))
 
     def _select_all_visible(self):
         """Tích chọn tất cả thẻ đang hiển thị."""
@@ -1445,8 +1578,8 @@ class AnkiSmartFactory(QDialog):
                 self.raw_data.remove(it)
             except ValueError:
                 pass
-        self.lbl_raw.setText(f"📊 Kho hàng: {len(self.raw_data)} mục")
-        self.lbl_ready.setText(f"✅ Sẵn sàng: {len(self.prepared_data)} thẻ")
+        self.lbl_raw.setText(t("filter_raw_count", count=len(self.raw_data)))
+        self.lbl_ready.setText(t("preview_ready", count=len(self.prepared_data)))
         self._rebuild_preview()
         self._save_current_flow()
 
@@ -1479,7 +1612,7 @@ class AnkiSmartFactory(QDialog):
             self.lbl_status.setText(f"🗑️ Đã xóa {n_sel} thẻ đã chọn khỏi xưởng.")
         elif clicked == btn_all:
             self._remove_factory_indices(list(range(len(self.prepared_data))))
-            self.lbl_status.setText("🧹 Đã xóa toàn bộ thẻ trong xưởng.")
+            self.lbl_status.setText(t("status_cleared_factory"))
 
     def _show_diff_meaning_report(self):
         """Hiển thị dialog báo cáo các từ vựng có cùng mặt chữ nhưng khác nghĩa,
@@ -1492,7 +1625,7 @@ class AnkiSmartFactory(QDialog):
         # Đếm lại
         remaining_dup_diff = sum(1 for d in self.prepared_data if d["action"] == "dup_diff")
         self.btn_diff_meaning.setEnabled(remaining_dup_diff > 0)
-        self.lbl_ready.setText(f"✅ Sẵn sàng: {len(self.prepared_data)} thẻ")
+        self.lbl_ready.setText(t("preview_ready", count=len(self.prepared_data)))
         # Dựng lại danh sách theo bộ lọc/tìm kiếm hiện tại
         self._rebuild_preview()
 
@@ -1569,7 +1702,7 @@ class AnkiSmartFactory(QDialog):
         self.pbar.setVisible(False)
         self.btn_cancel.setVisible(False)
         self.btn_import.setEnabled(True)
-        self.lbl_status.setText("✅ Hoàn tất!")
+        self.lbl_status.setText(t("status_done"))
 
         idxs = sorted(set(getattr(self, '_last_export_indices', None) or []))
         # Ghi nhận vào lịch sử import
@@ -1622,7 +1755,7 @@ class AnkiSmartFactory(QDialog):
     def _cancel_import(self):
         if self.import_worker and self.import_worker.isRunning():
             self.import_worker.stop()
-            self.lbl_status.setText("⏸️ Đang dừng...")
+            self.lbl_status.setText(t("status_stopping"))
             self.btn_cancel.setEnabled(False)
 
     def _drop_extra_combo_cards(self, mid, keep_count):
@@ -1851,7 +1984,7 @@ class AnkiSmartFactory(QDialog):
             return
 
         from utils.ai_extractor import extract_text_from_file
-        self.lbl_ai_status.setText("📖 Đang đọc nội dung file... (lần đầu có thể tự cài thư viện đọc file)")
+        self.lbl_ai_status.setText(t("status_reading_file"))
         mw.app.processEvents()
 
         new_files = []
@@ -1874,7 +2007,7 @@ class AnkiSmartFactory(QDialog):
 
         if not new_files:
             self.lbl_ai_status.setText("")
-            showInfo("⚠️ Không đọc được nội dung file nào.\n\n" + "\n".join(errors))
+            showInfo(t("status_no_file_content", errors="\n".join(errors)))
             return
 
         self._ai_attached_files.extend(new_files)
@@ -1960,7 +2093,7 @@ class AnkiSmartFactory(QDialog):
         self.btn_ai_batch.setEnabled(False)
         self.btn_ai_settings.setEnabled(False)
         self.btn_ai_clear_text.setEnabled(False)
-        self.lbl_ai_status.setText("🔍 Đang quét deck Anki...")
+        self.lbl_ai_status.setText(t("status_scanning_deck"))
         self.lbl_ai_status.setStyleSheet("color:#e67e22;font-size:11px;font-weight:bold;")
         self.btn_ai_stop.setVisible(True)
         mw.app.processEvents()
@@ -2009,7 +2142,7 @@ class AnkiSmartFactory(QDialog):
         if existing_words:
             self.lbl_ai_status.setText(f"📚 Deck có {len(existing_words)} từ → AI sẽ tránh trùng")
         else:
-            self.lbl_ai_status.setText("⏳ Đang gọi AI...")
+            self.lbl_ai_status.setText(t("status_calling_ai"))
         mw.app.processEvents()
 
         self._ai_thread = AiExtractThread(
@@ -2050,7 +2183,7 @@ class AnkiSmartFactory(QDialog):
     def _on_ai_error(self, error_msg):
         self._enable_ai_buttons()
 
-        self.lbl_ai_status.setText(f"❌ Lỗi: {error_msg[:80]}")
+        self.lbl_ai_status.setText(t("batch_status_error", error=error_msg[:80]))
         self.lbl_ai_status.setStyleSheet("color:#e74c3c;font-size:11px;font-weight:bold;")
 
         showInfo(f"❌ Lỗi AI Trích Xuất:\n\n{error_msg}")
@@ -2104,19 +2237,19 @@ class AnkiSmartFactory(QDialog):
         if dlg.exec():
             vocab_list = dlg.get_result_vocab()
             if vocab_list:
-                label = "cấu trúc" if self._is_grammar else "từ"
-                self.lbl_ai_status.setText(f"✅ Batch: {len(vocab_list)} {label} đã xử lý!")
+                label = t("item_label_grammar_short") if self._is_grammar else t("item_label_vocab_short")
+                self.lbl_ai_status.setText(t("status_batch_done", count=len(vocab_list), label=label))
                 self.lbl_ai_status.setStyleSheet("color:#27ae60;font-size:11px;font-weight:bold;")
                 # Đổ JSON vào text input để hiển thị trong xưởng
                 import json as _json
                 json_str = _json.dumps(vocab_list, indent=2, ensure_ascii=False)
                 self.json_input.setPlainText(json_str)
                 self.raw_data = list(vocab_list)
-                self.lbl_raw.setText(f"📊 Kho hàng: {len(self.raw_data)} mục")
+                self.lbl_raw.setText(t("filter_raw_count", count=len(self.raw_data)))
                 # Mở preview dialog để người dùng xem và chỉnh sửa
                 self._show_ai_preview(vocab_list)
             else:
-                self.lbl_ai_status.setText("⚠️ Batch: Không có kết quả")
+                self.lbl_ai_status.setText(t("status_batch_empty"))
                 self.lbl_ai_status.setStyleSheet("color:#e67e22;font-size:11px;")
 
     # ═══════════════════════════════════════════════════════
@@ -2196,7 +2329,7 @@ class AnkiSmartFactory(QDialog):
             self._ai_chat_timer.timeout.connect(self._update_ai_chat_timer)
         self._ai_chat_timer.start(1000)
 
-        self.lbl_ai_status.setText(f"⏱ 00:00 | Dự kiến: {est_text} | Đang kết nối...")
+        self.lbl_ai_status.setText(t("status_connecting_elapsed", elapsed="00:00", estimate=est_text))
         self.lbl_ai_status.setStyleSheet("color:#2980b9;font-size:11px;font-weight:bold;")
 
         # Hiện nút dừng
@@ -2225,7 +2358,7 @@ class AnkiSmartFactory(QDialog):
         self._enable_ai_buttons()
         elapsed = self._get_elapsed_str()
         token_info = result.get("token_info")
-        status_text = f"✅ Hoàn tất sau {elapsed}!"
+        status_text = t("status_chat_done", elapsed=elapsed)
         if token_info:
             from utils.ai_extractor import _format_token_report
             status_text += f" | {_format_token_report(token_info)}"
@@ -2250,7 +2383,7 @@ class AnkiSmartFactory(QDialog):
         self._stop_ai_chat_timer()
         self._enable_ai_buttons()
         elapsed = self._get_elapsed_str()
-        self.lbl_ai_status.setText(f"❌ Lỗi sau {elapsed}: {error_msg[:60]}")
+        self.lbl_ai_status.setText(t("status_chat_error", elapsed=elapsed, error=error_msg[:60]))
         self.lbl_ai_status.setStyleSheet("color:#e74c3c;font-size:11px;font-weight:bold;")
         showInfo(f"❌ Lỗi AI Chat:\n\n{error_msg}")
         self._ai_chat_thread = None
@@ -2296,9 +2429,9 @@ class AnkiSmartFactory(QDialog):
         self._stop_ai_chat_timer()
         self._enable_ai_buttons()
         elapsed = self._get_elapsed_str() if hasattr(self, '_ai_chat_start_time') else "?"
-        self.lbl_ai_status.setText(f"⏹ Đã dừng sau {elapsed}")
+        self.lbl_ai_status.setText(t("status_stopped_ai", elapsed=elapsed))
         self.lbl_ai_status.setStyleSheet("color:#e67e22;font-size:11px;font-weight:bold;")
-        tooltip("⏹ Đã dừng yêu cầu AI.")
+        tooltip(t("tooltip_stopped_ai"))
 
     def _show_ai_chat_dialog(self, result: dict):
         """Hiển thị dialog chat với phản hồi của AI"""
@@ -2331,13 +2464,9 @@ class AnkiSmartFactory(QDialog):
             except Exception as e:
                 logger.warning("Lỗi ghi lịch sử AI chat: %s", e)
 
-            self.lbl_ai_status.setText(f"✅ Đã đổ {len(dlg.accepted_vocab)} từ vựng vào xưởng!")
+            self.lbl_ai_status.setText(t("status_poured_vocab", count=len(dlg.accepted_vocab)))
             self.lbl_ai_status.setStyleSheet("color:#27ae60;font-size:11px;font-weight:bold;")
-            showInfo(
-                f"🤖 AI Chat Hoàn Tất!\n\n"
-                f"📊 Đã đổ {len(dlg.accepted_vocab)} từ vựng vào khung JSON.\n"
-                f"👉 Nhấn <b>'Kiểm Định Lô Hàng'</b> để kiểm tra và import."
-            )
+            showInfo(t("msg_chat_poured", count=len(dlg.accepted_vocab)))
 
     # ═══════════════════════════════════════════════════════
     #  DIALOG XEM TRƯỚC & CHỈNH SỬA THẺ SAU AI (wired → ui/ai_preview.py)
@@ -2379,14 +2508,10 @@ class AnkiSmartFactory(QDialog):
         except Exception as e:
             logger.warning("Lỗi ghi lịch sử AI extract: %s", e)
 
-        self.lbl_ai_status.setText(f"✅ Đã đổ {len(final_list)} từ vựng vào xưởng!")
+        self.lbl_ai_status.setText(t("status_poured_vocab", count=len(final_list)))
         self.lbl_ai_status.setStyleSheet("color:#27ae60;font-size:11px;font-weight:bold;")
 
-        showInfo(
-            f"🤖 AI Trích Xuất Hoàn Tất!\n\n"
-            f"📊 Đã đổ {len(final_list)} từ vựng vào khung JSON.\n"
-            f"👉 Nhấn <b>'Kiểm Định Lô Hàng'</b> để kiểm tra và import."
-        )
+        showInfo(t("msg_extract_poured", count=len(final_list)))
 
     # ═══════════════════════════════════════════════════════
     #  LỊCH SỬ AI — Xem lại & đưa vào xưởng để import lại
@@ -2411,10 +2536,10 @@ class AnkiSmartFactory(QDialog):
         self._analyze_content()
         # Đảm bảo kho hàng đúng theo item đã chọn (an toàn nếu JSON parse lệch)
         self.raw_data = list(items)
-        self.lbl_raw.setText(f"📊 Kho hàng: {len(self.raw_data)} mục")
-        self.lbl_ai_status.setText(f"📥 Đã đưa {len(items)} từ từ lịch sử vào xưởng!")
+        self.lbl_raw.setText(t("filter_raw_count", count=len(self.raw_data)))
+        self.lbl_ai_status.setText(t("status_pulled_history", count=len(items)))
         self.lbl_ai_status.setStyleSheet("color:#27ae60;font-size:11px;font-weight:bold;")
-        tooltip(f"📥 Đã đưa {len(items)} từ vào xưởng. Bấm 'Kiểm Định' để kiểm tra & xuất xưởng.")
+        tooltip(t("tooltip_pulled_history", count=len(items)))
 
 
 # ═══════════════════════════════════════════════════════════

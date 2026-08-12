@@ -5,6 +5,7 @@ Batch Workers — Background threads for batch word list processing and deck org
 from aqt.qt import QThread, pyqtSignal
 
 from utils.logger import get_logger
+from utils.i18n import t
 from utils.batch_processor import (
     process_large_word_list,
     organize_decks_with_ai,
@@ -110,7 +111,7 @@ class DeckOrganizerThread(QThread):
                 return
 
             # Step 1: AI đề xuất tổ chức
-            self.progress.emit("🧠 Đang phân tích từ vựng để tổ chức deck...")
+            self.progress.emit(t("worker_progress_organize"))
 
             organization = organize_decks_with_ai(
                 vocab_list=self.vocab_list,
@@ -122,7 +123,7 @@ class DeckOrganizerThread(QThread):
                 return
 
             if not organization or not organization.get("decks"):
-                self.error.emit("⚠️ AI không đề xuất được cấu trúc deck.")
+                self.error.emit(t("worker_error_no_deck"))
                 return
 
             # Báo cáo cấu trúc
@@ -130,7 +131,7 @@ class DeckOrganizerThread(QThread):
             total_subs = sum(len(p.get("sub_decks", [])) for p in organization.get("decks", []))
             suggestion = organization.get("suggestion", "")
             
-            summary = f"📋 Đề xuất: {total_parents} parent deck, {total_subs} sub deck"
+            summary = t("worker_summary_deck", parents=total_parents, subs=total_subs)
             if suggestion:
                 summary += f"\n💡 {suggestion}"
             self.progress.emit(summary)
@@ -139,7 +140,7 @@ class DeckOrganizerThread(QThread):
 
             # Step 2: Tự động tạo deck nếu được yêu cầu
             if self.auto_create and self._is_running:
-                self.progress.emit("📁 Đang tạo deck trong Anki...")
+                self.progress.emit(t("worker_progress_create_decks"))
                 
                 created = create_decks_from_organization(
                     organization=organization,

@@ -30,7 +30,7 @@ from .logger import get_logger
 logger = get_logger()
 
 # Version của cấu trúc prompt config — bump khi thay đổi defaults (cache invalidation)
-PROMPT_CONFIG_VERSION = 4
+PROMPT_CONFIG_VERSION = 5
 
 CONFIG_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "ai_prompts.json")
 
@@ -97,19 +97,38 @@ def _write_overrides(cfg: dict):
 #  DEFAULTS (lazy từ ai_extractor — không trùng lặp nội dung)
 # ═══════════════════════════════════════════════════════════
 
+def _ui_is_english() -> bool:
+    """UI đang ở tiếng Anh? (quyết định chọn prompt sinh nghĩa/dịch bằng tiếng Anh)."""
+    try:
+        from .i18n import get_language
+        return get_language() == "en"
+    except Exception:
+        return False
+
+
 def _default_json_template(lang: str, kind: str) -> str:
     from . import ai_extractor
+    en = _ui_is_english()
     if kind == "grammar":
-        return ai_extractor._GRAMMAR_JSON_TEMPLATES.get(lang, ai_extractor._JAPANESE_GRAMMAR_JSON_TEMPLATE)
-    return ai_extractor._JSON_TEMPLATES.get(lang, ai_extractor._JAPANESE_JSON_TEMPLATE)
+        table = ai_extractor._GRAMMAR_JSON_TEMPLATES_EN if en else ai_extractor._GRAMMAR_JSON_TEMPLATES
+        fallback = ai_extractor._JAPANESE_GRAMMAR_JSON_TEMPLATE_EN if en else ai_extractor._JAPANESE_GRAMMAR_JSON_TEMPLATE
+        return table.get(lang, fallback)
+    table = ai_extractor._JSON_TEMPLATES_EN if en else ai_extractor._JSON_TEMPLATES
+    fallback = ai_extractor._JAPANESE_JSON_TEMPLATE_EN if en else ai_extractor._JAPANESE_JSON_TEMPLATE
+    return table.get(lang, fallback)
 
 
 def _default_system_prompt(lang: str, kind: str) -> str:
     """System prompt mặc định (đã interpolate mẫu)."""
     from . import ai_extractor
+    en = _ui_is_english()
     if kind == "grammar":
-        return ai_extractor._GRAMMAR_SYSTEM_PROMPTS.get(lang, ai_extractor._GRAMMAR_SYSTEM_PROMPTS["japanese"])
-    return ai_extractor._SYSTEM_PROMPTS.get(lang, ai_extractor._JAPANESE_SYSTEM_PROMPT)
+        table = ai_extractor._GRAMMAR_SYSTEM_PROMPTS_EN if en else ai_extractor._GRAMMAR_SYSTEM_PROMPTS
+        fallback = ai_extractor._GRAMMAR_SYSTEM_PROMPTS_EN["japanese"] if en else ai_extractor._GRAMMAR_SYSTEM_PROMPTS["japanese"]
+        return table.get(lang, fallback)
+    table = ai_extractor._SYSTEM_PROMPTS_EN if en else ai_extractor._SYSTEM_PROMPTS
+    fallback = ai_extractor._JAPANESE_SYSTEM_PROMPT_EN if en else ai_extractor._JAPANESE_SYSTEM_PROMPT
+    return table.get(lang, fallback)
 
 
 def _default_system_prompt_raw(lang: str, kind: str) -> str:

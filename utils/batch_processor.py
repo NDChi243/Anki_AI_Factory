@@ -223,15 +223,41 @@ def _build_batch_user_prompt(
     template = get_json_template(lang, "grammar" if grammar else "vocab")
     
     # Liệt kê từ/pattern cần xử lý
+    try:
+        from utils.ai_extractor import _ui_lang_en
+        en = _ui_lang_en()
+    except Exception:
+        en = False
+    meaning_label = "meaning" if en else "nghĩa"
+
     word_list_str = "\n".join(
         f"{i+1}. {w['front']}"
-        + (f" (nghĩa: {w['meaning']})" if w.get("meaning") else "")
+        + (f" ({meaning_label}: {w['meaning']})" if w.get("meaning") else "")
         + (f" [{w['level']}]" if w.get("level") else "")
         for i, w in enumerate(words)
     )
     
     if grammar:
-        prompt = f"""📝 BATCH {batch_num}/{total_batches} — XỬ LÝ {len(words)} CẤU TRÚC NGỮ PHÁP
+        if en:
+            prompt = f"""📝 BATCH {batch_num}/{total_batches} — PROCESSING {len(words)} GRAMMAR PATTERNS
+
+LIST OF PATTERNS TO PROCESS:
+{word_list_str}
+
+🎯 TASK:
+For EACH pattern in the list above, create a complete JSON object following this template:
+{template}
+
+⚠️ HIGH QUALITY REQUIREMENTS:
+1. pattern: the MAIN grammar structure, mark slots clearly (〜 / V / N / Adj).
+2. usage: a specific, memorable formula.
+3. explanation: a CONCISE explanation of usage + nuance + common learner mistakes + synonyms.
+4. VIVID EXAMPLES: Example 1 casual real-life, Example 2 formal. Match JLPT/HSK level.
+5. For Chinese: EVERY example MUST include full tone-marked pinyin.
+6. If the user already provided a meaning/level → keep and enhance it.
+"""
+        else:
+            prompt = f"""📝 BATCH {batch_num}/{total_batches} — XỬ LÝ {len(words)} CẤU TRÚC NGỮ PHÁP
 
 DANH SÁCH CẤU TRÚC CẦN XỬ LÝ:
 {word_list_str}
@@ -249,7 +275,28 @@ Với MỖI cấu trúc trong danh sách trên, tạo một object JSON đầy �
 6. Nếu người dùng đã cung cấp nghĩa/cấp độ → giữ nguyên và bổ sung.
 """
     else:
-        prompt = f"""📝 BATCH {batch_num}/{total_batches} — XỬ LÝ {len(words)} TỪ VỰNG
+        if en:
+            prompt = f"""📝 BATCH {batch_num}/{total_batches} — PROCESSING {len(words)} WORDS
+
+LIST OF WORDS TO PROCESS:
+{word_list_str}
+
+🎯 TASK:
+For EACH word in the list above, create a complete JSON object following this template:
+{template}
+
+⚠️ HIGH QUALITY REQUIREMENTS:
+1. FILL ALL fields completely for every word.
+2. VIVID EXAMPLES:
+   - Example 1: natural CASUAL speech, genuine emotion, real-life situation
+   - Example 2: FORMAL, polite
+   - NEVER use lifeless textbook sentences
+3. If the user already provided a meaning/level → keep and enhance it
+4. Analyze the correct topic for each word
+5. For polysemous words → show different meanings in the 2 examples
+"""
+        else:
+            prompt = f"""📝 BATCH {batch_num}/{total_batches} — XỬ LÝ {len(words)} TỪ VỰNG
 
 DANH SÁCH TỪ CẦN XỬ LÝ:
 {word_list_str}
@@ -285,18 +332,38 @@ Với MỖI từ trong danh sách trên, tạo một object JSON đầy đủ th
         if overlap:
             if len(overlap) > _cap:
                 shown = overlap[:_cap]
-                note = f"\n(Còn {len(overlap) - _cap} từ khác trùng batch; tổng deck {len(existing_words)} từ)"
+                note = (
+                    f"\n({len(overlap) - _cap} more words matching this batch; deck total {len(existing_words)})"
+                    if en else
+                    f"\n(Còn {len(overlap) - _cap} từ khác trùng batch; tổng deck {len(existing_words)} từ)"
+                )
             else:
                 shown = overlap
-                note = f"\n(Tổng deck {len(existing_words)} từ — chỉ liệt kê từ trùng batch này)"
-            prompt += "\n⚠️ TỪ ĐÃ CÓ TRONG DECK — TUYỆT ĐỐI KHÔNG XUẤT RA:\n" + ", ".join(shown) + note + "\n"
+                note = (
+                    f"\n(Deck total {len(existing_words)} words — only listing words matching this batch)"
+                    if en else
+                    f"\n(Tổng deck {len(existing_words)} từ — chỉ liệt kê từ trùng batch này)"
+                )
+            header = (
+                "\n⚠️ WORDS ALREADY IN DECK — DO NOT OUTPUT:\n" if en else
+                "\n⚠️ TỪ ĐÃ CÓ TRONG DECK — TUYỆT ĐỐI KHÔNG XUẤT RA:\n"
+            )
+            prompt += header + ", ".join(shown) + note + "\n"
         else:
-            prompt += f"\n⚠️ DECK ĐÃ CÓ {len(existing_words)} TỪ (không trùng batch này) → cứ xử lý bình thường.\n"
+            prompt += (
+                f"\n⚠️ DECK ALREADY HAS {len(existing_words)} WORDS (none match this batch) → process normally.\n"
+                if en else
+                f"\n⚠️ DECK ĐÃ CÓ {len(existing_words)} TỪ (không trùng batch này) → cứ xử lý bình thường.\n"
+            )
     
     if custom_instruction.strip():
-        prompt += f"\n📌 YÊU CẦU BỔ SUNG (ưu tiên cao nhất):\n{custom_instruction.strip()}\n"
+        prompt += (
+            f"\n📌 EXTRA REQUIREMENTS (highest priority):\n{custom_instruction.strip()}\n"
+            if en else
+            f"\n📌 YÊU CẦU BỔ SUNG (ưu tiên cao nhất):\n{custom_instruction.strip()}\n"
+        )
     
-    prompt += "\nĐẦU RA: Mảng JSON thuần [...]. Không markdown."
+    prompt += "\nOUTPUT: Plain JSON array [...]. No markdown." if en else "\nĐẦU RA: Mảng JSON thuần [...]. Không markdown."
     
     return prompt
 

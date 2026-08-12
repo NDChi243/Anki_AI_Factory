@@ -20,6 +20,8 @@ from aqt.qt import (
 )
 from aqt.utils import tooltip
 
+from utils.i18n import t
+
 # QSplitter có thể không có trong aqt.qt của một số version Anki → fallback
 try:
     from aqt.qt import QSplitter
@@ -394,7 +396,7 @@ class ThemeDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("🎨 Tùy chỉnh giao diện")
+        self.setWindowTitle(t("theme_title"))
         self.setMinimumSize(480, 560)
         self.resize(520, 600)
         self.cfg = load_config()
@@ -404,28 +406,28 @@ class ThemeDialog(QDialog):
     def _build_ui(self):
         vl = QVBoxLayout(self)
 
-        title = QLabel("<h3>🧊 Glassmorphism — Tùy chỉnh giao diện</h3>")
+        title = QLabel(f"<h3>{t('theme_header')}</h3>")
         vl.addWidget(title)
-        vl.addWidget(QLabel("Thay đổi áp dụng ngay (live). Nhấn “Áp dụng & Lưu” để lưu."))
+        vl.addWidget(QLabel(t("theme_live_hint")))
 
         gl = QGridLayout()
         gl.setHorizontalSpacing(10)
         gl.setVerticalSpacing(10)
 
-        gl.addWidget(QLabel("🎚 Chủ đề:"), 0, 0)
+        gl.addWidget(QLabel(t("theme_preset_label")), 0, 0)
         self.cbo_preset = QComboBox()
         for key, p in PRESETS.items():
             self.cbo_preset.addItem(p["name"], key)
         gl.addWidget(self.cbo_preset, 0, 1)
 
-        gl.addWidget(QLabel("🎨 Màu nhấn:"), 1, 0)
+        gl.addWidget(QLabel(t("theme_accent_label")), 1, 0)
         self.cbo_accent = QComboBox()
         for label, hexv in ACCENT_PRESETS:
             self.cbo_accent.addItem(f"{label}  ({hexv})", hexv)
         self.cbo_accent.addItem("🌈 Tùy chỉnh...", "__custom__")
         gl.addWidget(self.cbo_accent, 1, 1)
 
-        gl.addWidget(QLabel("💎 Độ trong của kính:"), 2, 0)
+        gl.addWidget(QLabel(t("theme_alpha_label")), 2, 0)
         self.slider_alpha = QSlider(Qt.Orientation.Horizontal)
         self.slider_alpha.setRange(4, 26)
         self.lbl_alpha = QLabel("")
@@ -434,13 +436,13 @@ class ThemeDialog(QDialog):
         alpha_row.addWidget(self.lbl_alpha, 0)
         gl.addLayout(alpha_row, 2, 1)
 
-        gl.addWidget(QLabel("🔠 Cỡ chữ:"), 3, 0)
+        gl.addWidget(QLabel(t("theme_font_label")), 3, 0)
         self.spin_font = QSpinBox()
         self.spin_font.setRange(11, 17)
         self.spin_font.setSuffix(" px")
         gl.addWidget(self.spin_font, 3, 1)
 
-        gl.addWidget(QLabel("◻️ Bo góc:"), 4, 0)
+        gl.addWidget(QLabel(t("theme_radius_label")), 4, 0)
         self.spin_radius = QSpinBox()
         self.spin_radius.setRange(8, 22)
         self.spin_radius.setSuffix(" px")
@@ -449,21 +451,21 @@ class ThemeDialog(QDialog):
         vl.addLayout(gl)
 
         # Preview panel
-        self.preview = QGroupBox("👁 Xem trước")
+        self.preview = QGroupBox(t("theme_preview_grp"))
         pv = QVBoxLayout()
         row = QHBoxLayout()
-        b1 = QPushButton("Nút nhấn")
+        b1 = QPushButton(t("btn_button_sample"))
         b1.setProperty("class", "primary")
-        b2 = QPushButton("Thành công")
+        b2 = QPushButton(t("btn_success_sample"))
         b2.setProperty("class", "success")
-        b3 = QPushButton("Phụ")
+        b3 = QPushButton(t("btn_ghost_sample"))
         b3.setProperty("class", "ghost")
         row.addWidget(b1)
         row.addWidget(b2)
         row.addWidget(b3)
         pv.addLayout(row)
         inp = QComboBox()
-        inp.addItems(["Từ vựng", "Ngữ pháp", "Topic A", "Topic B"])
+        inp.addItems([t("theme_combo_sample"), t("item_label_grammar"), "Topic A", "Topic B"])
         pv.addWidget(inp)
         self.preview.setLayout(pv)
         vl.addWidget(self.preview, 1)
@@ -471,10 +473,10 @@ class ThemeDialog(QDialog):
         # Buttons
         btns = QHBoxLayout()
         btns.addStretch()
-        btn_apply = QPushButton("✅ Áp dụng & Lưu")
+        btn_apply = QPushButton(t("theme_apply_save"))
         btn_apply.setProperty("class", "success")
         btn_apply.clicked.connect(self._apply)
-        btn_cancel = QPushButton("Hủy")
+        btn_cancel = QPushButton(t("theme_cancel"))
         btn_cancel.setProperty("class", "ghost")
         btn_cancel.clicked.connect(self.reject)
         btns.addWidget(btn_apply)
@@ -505,7 +507,7 @@ class ThemeDialog(QDialog):
         data = self.cbo_accent.itemData(index)
         if data == "__custom__":
             color = QColorDialog.getColor(
-                QColor(self.cfg.get("accent", "#6aa7ff")), self, "Chọn màu nhấn"
+                QColor(self.cfg.get("accent", "#6aa7ff")), self, t("theme_color_dialog_title")
             )
             if color.isValid():
                 self.cfg["accent"] = color.name()
@@ -533,5 +535,5 @@ class ThemeDialog(QDialog):
             apply_theme(parent, self.cfg)
             if hasattr(parent, "_theme_cfg"):
                 parent._theme_cfg = dict(self.cfg)
-        tooltip("🎨 Đã áp dụng giao diện mới")
+        tooltip(t("theme_applied_tip"))
         self.accept()

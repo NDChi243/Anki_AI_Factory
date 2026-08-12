@@ -11,9 +11,19 @@ Kiểm tra:
 import os
 import sys
 
+import pytest
+
 _addon_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _addon_root not in sys.path:
     sys.path.insert(0, _addon_root)
+
+
+@pytest.fixture(autouse=True)
+def _force_vi_lang():
+    """Buộc ngôn ngữ UI về vi — các test assert chuỗi prompt TIẾNG VIỆT."""
+    from utils.i18n import set_language
+    set_language("vi")
+    yield
 
 
 class TestFormatExistingContext:

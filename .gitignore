@@ -13,6 +13,8 @@ utils/factory_state.json
 
 # === Python ===
 __pycache__/
+.pytest_cache/
+tests/.pytest_cache/
 *.py[cod]
 *$py.class
 *.so

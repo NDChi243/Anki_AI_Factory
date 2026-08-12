@@ -25,6 +25,14 @@ if _addon_root not in sys.path:
 from utils import prompt_config as pc
 
 
+@pytest.fixture(autouse=True)
+def _force_vi_lang():
+    """Buộc ngôn ngữ UI về vi — các test assert prompt mặc định TIẾNG VIỆT."""
+    from utils.i18n import set_language
+    set_language("vi")
+    yield
+
+
 LANGS = ("japanese", "chinese", "korean")
 KINDS = ("vocab", "grammar")
 
@@ -38,6 +46,30 @@ def clean_config(tmp_path, monkeypatch):
     yield
     pc._overrides_cache = None
     pc._overrides_mtime = None
+
+
+class TestUILanguagePromptSelection:
+    """Khi UI = EN → AI dùng prompt sinh nghĩa/dịch TIẾNG ANH; khi VI → tiếng Việt."""
+
+    def test_en_ui_uses_english_prompt(self, clean_config):
+        from utils.i18n import set_language
+        set_language("en")
+        sp = pc.get_system_prompt("japanese", "vocab")
+        assert "You are a Japanese language expert" in sp
+        assert "MẪU:" not in sp
+        tpl = pc.get_json_template("japanese", "vocab")
+        assert "to eat" in tpl
+        gsp = pc.get_system_prompt("chinese", "grammar")
+        assert "Chinese GRAMMAR expert" in gsp
+
+    def test_vi_ui_uses_vietnamese_prompt(self, clean_config):
+        from utils.i18n import set_language
+        set_language("vi")
+        sp = pc.get_system_prompt("japanese", "vocab")
+        assert "Bạn là chuyên gia tiếng Nhật" in sp
+        assert "OUTPUT:" not in sp
+        tpl = pc.get_json_template("japanese", "vocab")
+        assert "ăn" in tpl
 
 
 def _default_tpl(lang, kind):

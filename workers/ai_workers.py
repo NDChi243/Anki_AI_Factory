@@ -8,6 +8,7 @@ from aqt import mw
 from aqt.qt import QThread, pyqtSignal
 
 from utils.logger import get_logger
+from utils.i18n import t
 from utils.ai_extractor import (
     extract_vocabulary_long_text,
     extract_grammar_long_text,
@@ -67,11 +68,11 @@ class AiExtractThread(QThread):
     def run(self):
         try:
             if self.existing_words:
-                label = "cấu trúc ngữ pháp" if self.grammar else "từ đã có"
-                self.progress.emit(f"📚 Tránh {len(self.existing_words)} {label} trong deck...")
+                label = t("item_label_grammar_lower") if self.grammar else "words"
+                self.progress.emit(t("status_deck_avoid", count=len(self.existing_words), label=label))
 
             if self.grammar:
-                self.progress.emit("🤖 Đang gọi AI trích xuất NGỮ PHÁP...")
+                self.progress.emit(t("worker_progress_grammar"))
                 result_list = extract_grammar_long_text(
                     self.text,
                     self.lang,
@@ -79,9 +80,9 @@ class AiExtractThread(QThread):
                     existing_patterns=self.existing_words,
                     progress_callback=lambda msg: self.progress.emit(msg),
                 )
-                empty_msg = "⚠️ AI không trích xuất được cấu trúc ngữ pháp nào. Thử văn bản có nội dung rõ ràng hơn."
+                empty_msg = t("empty_grammar")
             else:
-                self.progress.emit("🤖 Đang gọi AI trích xuất từ vựng...")
+                self.progress.emit(t("worker_progress_vocab"))
                 result_list = extract_vocabulary_long_text(
                     self.text,
                     self.lang,
@@ -89,7 +90,7 @@ class AiExtractThread(QThread):
                     existing_words=self.existing_words,
                     progress_callback=lambda msg: self.progress.emit(msg),
                 )
-                empty_msg = "⚠️ AI không trích xuất được từ vựng nào. Thử văn bản có nội dung rõ ràng hơn."
+                empty_msg = t("empty_vocab")
 
             if not result_list:
                 self.error.emit(empty_msg)
@@ -117,7 +118,7 @@ class AiChatThread(QThread):
 
     def run(self):
         try:
-            self.progress.emit("🔍 Đang thu thập ngữ cảnh Anki...")
+            self.progress.emit(t("worker_progress_context"))
             result = chat_with_ai(
                 user_message=self.message,
                 lang=self.lang,

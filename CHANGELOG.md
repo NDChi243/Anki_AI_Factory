@@ -3,6 +3,8 @@
 ## [V17.1] — 2026-08-12
 
 ### ✨ Added
+- **🌐 Chế độ chuyển ngôn ngữ EN–VI (không hardcode)**: Hệ thống i18n `t()` phủ rộng lên UI/workers; vẫn còn vài chỗ hổng sẽ hoàn thiện dần (utils/i18n.py).
+- **📜 LICENSE (MIT)** + **⚙️ GitHub Actions CI** (chạy pytest 3.11/3.12) + **🤝 CONTRIBUTING.md** — nâng mức sẵn sàng cộng đồng.
 - **✏️ Sửa Prompt & Schema AI (không cần sửa code)**: Nút "✏️ Sửa Prompt / Schema AI" trong Cài Đặt AI mở dialog chỉnh System Prompt + mẫu JSON cho từng ngôn ngữ (Từ vựng & Ngữ pháp) — đổi luật trích xuất, schema, field_count ngay trên giao diện (ui/prompt_editor.py).
 - **🗂 Field Map Editor (Mức 1 — đóng "schema lock-in" ở lớp thẻ)**: Tab "🗂 Field Map" trong dialog — bảng map key JSON (tự sinh từ template đã sửa) → Field Anki (chỉnh được, key mới tự suy tên field). Khi Lưu: **tự THÊM field mới vào Note Type** (6 model: 3 ngôn ngữ × từ vựng/ngữ pháp nếu đã tồn tại); mọi nơi dùng `self._cfg()` (kiểm định/merge/import/tạo model) đều nhận `json_field_map` + `all_fields` HIỆU LỰC (defaults + ghi đè). Lưu trong `utils/ai_prompts.json` (`field_map`).
 - **🃏 Card Render tự động (Mức 2 — field mới TỰ HIỆN TRÊN THẺ)**: `mode/card_render.py` — sau khi thêm field mới, khối "extra fields" được APPEND vào cuối template thẻ (không phá template gốc), mỗi field bọc `{{#Field}}...{{/Field}}` (rỗng thì ẩn) + inline styles. Cột **"Hiển thị"** trong Field Map chọn vị trí: Chỉ mặt sau / Cả hai mặt / Chỉ mặt trước (`card_show` trong `ai_prompts.json`). `get_or_create_model`/`_force_rebuild_model`/editor save đều dùng builder → **Lưu xong là thẻ hiện field mới ngay**, không cần sửa template tay.

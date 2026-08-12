@@ -11,13 +11,15 @@ from aqt.qt import (
 )
 from aqt.utils import tooltip
 
+from utils.i18n import t
+
 
 class AiChatDialog(QDialog):
     """Dialog hiển thị phản hồi chat từ AI, có thể chứa từ vựng JSON"""
 
     def __init__(self, reply_text="", vocab_json=None, error=None, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("💬 AI Chat — Trợ Lý Anki Thông Minh")
+        self.setWindowTitle(t("dlg_ai_chat"))
         self.setMinimumSize(700, 500)
         self.resize(850, 650)
         self.setWindowFlags(
@@ -37,8 +39,8 @@ class AiChatDialog(QDialog):
         # Header
         header = QHBoxLayout()
         header.addWidget(QLabel(
-            "<h3>💬 Trợ Lý AI Anki</h3>"
-            "<p style='color:#555;font-size:11px;'>AI làm việc thông minh, chỉ truy vấn dữ liệu cần thiết</p>"
+            f"<h3>{t('chat_header_title')}</h3>"
+            f"<p style='color:#555;font-size:11px;'>{t('chat_header_sub')}</p>"
         ))
         header.addStretch()
         vl.addLayout(header)
@@ -48,7 +50,7 @@ class AiChatDialog(QDialog):
             err_lbl = QLabel(
                 f"<div style='background:#fde8e8;border:1px solid #e74c3c;"
                 f"border-radius:8px;padding:15px;color:#c0392b;'>"
-                f"<b>❌ Lỗi:</b><br>{error}</div>"
+                f"{t('chat_error_html', error=error)}</div>"
             )
             err_lbl.setWordWrap(True)
             vl.addWidget(err_lbl)
@@ -72,7 +74,7 @@ class AiChatDialog(QDialog):
 
         # Vocab section
         if self._vocab_json and len(self._vocab_json) > 0:
-            vocab_grp = QGroupBox(f"📝 AI Đề Xuất {len(self._vocab_json)} Từ Vựng")
+            vocab_grp = QGroupBox(t("chat_vocab_group", count=len(self._vocab_json)))
             vocab_grp.setStyleSheet(
                 "QGroupBox{font-weight:bold;font-size:13px;color:#27ae60;"
                 "border:2px solid #27ae60;border-radius:8px;padding:10px;margin-top:10px;}"
@@ -80,8 +82,7 @@ class AiChatDialog(QDialog):
             vocab_layout = QVBoxLayout()
 
             lbl_hint = QLabel(
-                "<span style='color:#555;'>AI đã trích xuất từ vựng từ phản hồi. "
-                "Bạn có thể <b>đổ vào xưởng</b> để import vào Anki.</span>"
+                f"<span style='color:#555;'>{t('chat_vocab_hint')}</span>"
             )
             lbl_hint.setWordWrap(True)
             vocab_layout.addWidget(lbl_hint)
@@ -117,7 +118,7 @@ class AiChatDialog(QDialog):
         # Buttons
         btn_layout = QHBoxLayout()
 
-        btn_close = QPushButton("❌ Đóng")
+        btn_close = QPushButton(t("chat_close"))
         btn_close.setStyleSheet(
             "padding:10px 20px;background:#95a5a6;color:white;"
             "font-weight:bold;border-radius:8px;"
@@ -128,7 +129,7 @@ class AiChatDialog(QDialog):
         btn_layout.addStretch()
 
         if self._vocab_json and len(self._vocab_json) > 0:
-            btn_accept = QPushButton(f"✅ Đổ {len(self._vocab_json)} Từ Vựng Vào Xưởng")
+            btn_accept = QPushButton(t("chat_accept", count=len(self._vocab_json)))
             btn_accept.setStyleSheet(
                 "padding:10px 25px;background:#27ae60;color:white;"
                 "font-weight:bold;border-radius:8px;font-size:13px;"
@@ -136,7 +137,7 @@ class AiChatDialog(QDialog):
             btn_accept.clicked.connect(self._accept_vocab)
             btn_layout.addWidget(btn_accept)
 
-        btn_copy = QPushButton("📋 Copy Phản Hồi")
+        btn_copy = QPushButton(t("chat_copy"))
         btn_copy.setStyleSheet(
             "padding:10px 16px;background:#3498db;color:white;"
             "font-weight:bold;border-radius:8px;"
@@ -145,7 +146,7 @@ class AiChatDialog(QDialog):
             QApplication.clipboard().setText(
                 self.text_browser.toPlainText() if hasattr(self, 'text_browser') else ""
             ),
-            tooltip("✅ Đã copy phản hồi!")
+            tooltip(t("chat_copied_tip"))
         ))
         btn_layout.addWidget(btn_copy)
 
@@ -160,7 +161,7 @@ class AiChatDialog(QDialog):
     def _format_reply(text: str) -> str:
         """Format reply text thành HTML đẹp"""
         if not text:
-            return "<p style='color:#999;'><i>Không có phản hồi.</i></p>"
+            return f"<p style='color:#999;'><i>{t('chat_no_reply')}</i></p>"
 
         # Escape HTML
         text = text.replace("&", "&").replace("<", "<").replace(">", ">")

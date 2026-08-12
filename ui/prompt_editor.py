@@ -26,6 +26,7 @@ from utils.prompt_config import (
     validate_json_template, apply_field_map_to_cfg, auto_field_name,
 )
 from utils.logger import get_logger
+from utils.i18n import t
 from mode import LANG_TEMPLATES, LANG_GRAMMAR_TEMPLATES
 from mode.card_render import build_qfmt as _build_qfmt, build_afmt as _build_afmt
 
@@ -55,7 +56,7 @@ class PromptEditorDialog(QDialog):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self.setWindowTitle("✏️ Sửa Prompt, Schema & Field Map AI")
+        self.setWindowTitle(t("prompt_editor_title"))
         self.setMinimumSize(820, 640)
         self.resize(940, 720)
 
@@ -75,9 +76,8 @@ class PromptEditorDialog(QDialog):
         vl = QVBoxLayout(self)
 
         header = QLabel(
-            "<h3>✏️ Prompt, Schema & Field Map AI</h3>"
-            "<p style='color:#555;'>Chỉnh <b>System Prompt</b>, <b>mẫu JSON</b> và "
-            "<b>map key → Field Anki</b> cho từng ngôn ngữ. <b>Không cần sửa code.</b></p>"
+            f"<h3>{t('prompt_editor_header')}</h3>"
+            f"<p style='color:#555;'>{t('prompt_editor_sub')}</p>"
             "<p style='color:#7f8c8d;font-size:12px;'>"
             "Trong System Prompt, dùng <code>{{JSON_TEMPLATE}}</code> để chèn mẫu vào \"MẪU:\". "
             "Sửa xong → cache AI tự làm mới. Field mới trong Field Map sẽ được thêm vào Note Type khi Lưu.</p>"
@@ -93,7 +93,7 @@ class PromptEditorDialog(QDialog):
             page_layout = QVBoxLayout(page)
 
             lang_row = QHBoxLayout()
-            lang_row.addWidget(QLabel("<b>🌏 Ngôn ngữ:</b>"))
+            lang_row.addWidget(QLabel(f"<b>{t('prompt_lang_label')}</b>"))
             cbo_lang = QComboBox()
             for lang, label in _LANG_LABELS.items():
                 cbo_lang.addItem(label, lang)
@@ -106,7 +106,7 @@ class PromptEditorDialog(QDialog):
             info.setWordWrap(True)
             page_layout.addWidget(info)
 
-            page_layout.addWidget(QLabel("<b>📋 Mẫu JSON (schema AI phải tuân theo):</b>"))
+            page_layout.addWidget(QLabel(f"<b>{t('prompt_json_label')}</b>"))
             txt_json = QPlainTextEdit()
             txt_json.setPlaceholderText('{\n  "front": "…",\n  "meaning": "…"\n}')
             txt_json.setMaximumHeight(200)
@@ -114,11 +114,11 @@ class PromptEditorDialog(QDialog):
             page_layout.addWidget(txt_json)
 
             page_layout.addWidget(QLabel(
-                f"<b>🧠 System Prompt</b> "
+                f"<b>{t('prompt_system_label')}</b> "
                 f"<span style='color:#7f8c8d;'>(dùng <code>{TEMPLATE_PLACEHOLDER}</code> để chèn mẫu)</span>"
             ))
             txt_prompt = QPlainTextEdit()
-            txt_prompt.setPlaceholderText("Bạn là chuyên gia…")
+            txt_prompt.setPlaceholderText(t("prompt_placeholder"))
             page_layout.addWidget(txt_prompt, stretch=1)
 
             self.tabs.addTab(page, f"Prompt {_KIND_LABELS[kind]}")
@@ -132,14 +132,14 @@ class PromptEditorDialog(QDialog):
         fm_layout = QVBoxLayout(fm_page)
 
         fm_row = QHBoxLayout()
-        fm_row.addWidget(QLabel("<b>📦 Loại:</b>"))
+        fm_row.addWidget(QLabel(f"<b>{t('prompt_kind_label')}</b>"))
         self.fm_cbo_kind = QComboBox()
         for kind in _KINDS:
             self.fm_cbo_kind.addItem(_KIND_LABELS[kind], kind)
         self.fm_cbo_kind.currentIndexChanged.connect(lambda *_: self._on_fm_change())
         fm_row.addWidget(self.fm_cbo_kind)
 
-        fm_row.addWidget(QLabel("<b>🌏 Ngôn ngữ:</b>"))
+        fm_row.addWidget(QLabel(f"<b>{t('prompt_lang_label')}</b>"))
         self.fm_cbo_lang = QComboBox()
         for lang, label in _LANG_LABELS.items():
             self.fm_cbo_lang.addItem(label, lang)
@@ -153,36 +153,36 @@ class PromptEditorDialog(QDialog):
         fm_layout.addWidget(self.fm_info)
 
         self.fm_table = QTableWidget(0, 3)
-        self.fm_table.setHorizontalHeaderLabels(["Key JSON (từ template)", "Field Anki", "Hiển thị"])
+        self.fm_table.setHorizontalHeaderLabels([t("prompt_fm_key"), t("prompt_fm_field"), t("prompt_fm_show")])
         self.fm_table.horizontalHeader().setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         self.fm_table.horizontalHeader().setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
         self.fm_table.horizontalHeader().setSectionResizeMode(2, QHeaderView.ResizeMode.ResizeToContents)
         self.fm_table.verticalHeader().setVisible(False)
         fm_layout.addWidget(self.fm_table, stretch=1)
 
-        self.tabs.addTab(fm_page, "🗂 Field Map")
+        self.tabs.addTab(fm_page, t("prompt_field_map_tab"))
 
         self.tabs.currentChanged.connect(lambda *_: self._on_tab_change())
         vl.addWidget(self.tabs, stretch=1)
 
         # ── Nút chức năng ─────────────────────────────────
         btn_row = QHBoxLayout()
-        btn_preview = QPushButton("👁 Xem Prompt Đầy Đủ")
+        btn_preview = QPushButton(t("btn_preview_prompt"))
         btn_preview.clicked.connect(self._on_preview)
         btn_row.addWidget(btn_preview)
 
-        btn_reset = QPushButton("♻️ Reset Mặc Định")
+        btn_reset = QPushButton(t("btn_reset_defaults"))
         btn_reset.setStyleSheet("padding:8px 14px;background:#e67e22;color:white;font-weight:bold;border-radius:6px;")
         btn_reset.clicked.connect(self._on_reset)
         btn_row.addWidget(btn_reset)
 
         btn_row.addStretch()
 
-        btn_close = QPushButton("❌ Đóng")
+        btn_close = QPushButton(t("btn_close"))
         btn_close.clicked.connect(self.reject)
         btn_row.addWidget(btn_close)
 
-        btn_save = QPushButton("💾 Lưu Tất Cả")
+        btn_save = QPushButton(t("btn_save_all"))
         btn_save.setStyleSheet("padding:8px 20px;background:#27ae60;color:white;font-weight:bold;border-radius:6px;")
         btn_save.clicked.connect(self._on_save)
         btn_row.addWidget(btn_save)

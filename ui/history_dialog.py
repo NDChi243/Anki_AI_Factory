@@ -13,13 +13,17 @@ from aqt.qt import (
 from aqt.utils import tooltip
 
 from utils.ai_extractor import get_import_history_items
+from utils.i18n import t
 
-_LANG_OPTIONS = [
-    ("📂 Tất cả", None),
-    ("🇯🇵 Tiếng Nhật", "japanese"),
-    ("🇨🇳 Tiếng Trung", "chinese"),
-    ("🇰🇷 Tiếng Hàn", "korean"),
-]
+
+def _lang_options():
+    """Danh sách bộ lọc ngôn ngữ theo ngôn ngữ UI hiện tại."""
+    return [
+        (t("history_lang_all"), None),
+        (t("lang_japanese"), "japanese"),
+        (t("lang_chinese"), "chinese"),
+        (t("lang_korean"), "korean"),
+    ]
 
 _LANG_TAG = {
     "japanese": "🇯🇵",
@@ -39,7 +43,7 @@ class HistoryBrowserDialog(QDialog):
         self._all_entries = []   # [(lang, item_dict), ...]
         self._visible = []
 
-        self.setWindowTitle("📚 Lịch Sử AI — Từ Vựng Đã Lưu")
+        self.setWindowTitle(t("history_title"))
         self.setMinimumSize(780, 560)
         self.resize(900, 650)
         self.setWindowFlags(
@@ -54,12 +58,8 @@ class HistoryBrowserDialog(QDialog):
         vl = QVBoxLayout(self)
 
         header = QLabel(
-            "<h3>📚 Lịch Sử Từ Vựng Đã Lưu (AI / Import)</h3>"
-            "<p style='color:#555;font-size:11px;'>"
-            "Xem lại các từ đã được AI trích xuất hoặc import. "
-            "Tích chọn rồi bấm <b>📥 Đưa Vào Xưởng</b> để đưa vào xưởng, "
-            "sau đó bấm <b>Kiểm Định</b> và <b>XUẤT XƯỞNG</b> lại."
-            "</p>"
+            f"<h3>{t('history_header')}</h3>"
+            f"<p style='color:#555;font-size:11px;'>{t('history_desc')}</p>"
         )
         header.setWordWrap(True)
         vl.addWidget(header)
@@ -67,31 +67,31 @@ class HistoryBrowserDialog(QDialog):
         # ── Search + lọc ngôn ngữ ──
         bar = QHBoxLayout()
         self.txt_search = QLineEdit()
-        self.txt_search.setPlaceholderText("🔍 Tìm theo từ / nghĩa / cấp độ...")
+        self.txt_search.setPlaceholderText(t("history_search_placeholder"))
         self.txt_search.textChanged.connect(self._rebuild_list)
         bar.addWidget(self.txt_search, 1)
         self.cbo_lang = QComboBox()
-        for label, _ in _LANG_OPTIONS:
+        for label, _ in _lang_options():
             self.cbo_lang.addItem(label)
-        for i, (_, lk) in enumerate(_LANG_OPTIONS):
+        for i, (_, lk) in enumerate(_lang_options()):
             if lk == self.current_lang:
                 self.cbo_lang.setCurrentIndex(i)
                 break
-        self.cbo_lang.setToolTip("Lọc lịch sử theo ngôn ngữ")
+        self.cbo_lang.setToolTip(t("history_lang_tip"))
         self.cbo_lang.currentIndexChanged.connect(self._reload_data)
         bar.addWidget(self.cbo_lang, 0)
         vl.addLayout(bar)
 
         self.lst = QListWidget()
-        self.lst.setToolTip("Tích chọn các từ muốn đưa vào xưởng")
+        self.lst.setToolTip(t("history_list_tip"))
         vl.addWidget(self.lst, 1)
 
         # ── Nút chọn nhanh + đếm ──
         sel = QHBoxLayout()
-        self.btn_select_all = QPushButton("✅ Chọn Tất Cả")
+        self.btn_select_all = QPushButton(t("btn_select_all2"))
         self.btn_select_all.clicked.connect(self._select_all)
         sel.addWidget(self.btn_select_all)
-        self.btn_select_none = QPushButton("☐ Bỏ Chọn")
+        self.btn_select_none = QPushButton(t("btn_select_none2"))
         self.btn_select_none.clicked.connect(self._select_none)
         sel.addWidget(self.btn_select_none)
         sel.addStretch()
@@ -102,26 +102,27 @@ class HistoryBrowserDialog(QDialog):
 
         # ── Nút hành động ──
         btn_row = QHBoxLayout()
-        btn_close = QPushButton("❌ Đóng")
+        btn_close = QPushButton(t("btn_close"))
         btn_close.setStyleSheet(
             "padding:10px 20px;background:#95a5a6;color:white;font-weight:bold;border-radius:8px;"
         )
         btn_close.clicked.connect(self.reject)
         btn_row.addWidget(btn_close)
         btn_row.addStretch()
-        self.btn_pull = QPushButton("📥 Đưa Vào Xưởng")
+        self.btn_pull = QPushButton(t("btn_pull_into_factory"))
         self.btn_pull.setStyleSheet(
             "padding:10px 30px;background:#27ae60;color:white;font-weight:bold;border-radius:8px;font-size:14px;"
         )
-        self.btn_pull.setToolTip("Đưa các từ đã chọn vào xưởng để Kiểm Định & xuất xưởng lại")
+        self.btn_pull.setToolTip(t("btn_pull_into_factory_tip"))
         self.btn_pull.clicked.connect(self._on_pull)
         btn_row.addWidget(self.btn_pull)
         vl.addLayout(btn_row)
 
     def _selected_lang(self):
         idx = self.cbo_lang.currentIndex()
-        if 0 <= idx < len(_LANG_OPTIONS):
-            return _LANG_OPTIONS[idx][1]
+        opts = _lang_options()
+        if 0 <= idx < len(opts):
+            return opts[idx][1]
         return None
 
     def _reload_data(self):
@@ -153,7 +154,7 @@ class HistoryBrowserDialog(QDialog):
             li.setCheckState(Qt.CheckState.Unchecked)
             self.lst.addItem(li)
         self.lst.blockSignals(False)
-        self.lbl_count.setText(f"📚 {len(self._visible)} từ đang hiển thị")
+        self.lbl_count.setText(t("history_count_visible", count=len(self._visible)))
 
     def _select_all(self):
         self.lst.blockSignals(True)
@@ -179,7 +180,7 @@ class HistoryBrowserDialog(QDialog):
     def _on_pull(self):
         checked = self._checked_entries()
         if not checked:
-            tooltip("⚠️ Chưa chọn từ nào. Hãy tích chọn các từ cần đưa vào xưởng.")
+            tooltip(t("tooltip_no_selection"))
             return
         self.accepted_items = [item for _, item in checked]
         langs = {l for l, _ in checked}
